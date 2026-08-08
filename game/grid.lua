@@ -129,6 +129,9 @@ function Grid:isInFireZone(col, row)
 end
 
 function Grid:getMoveCost(col, row)
+  if self:isIceTile(col, row) then
+    return 0
+  end
   if self:isInFireZone(col, row) then
     return 2
   end

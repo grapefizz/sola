@@ -1,7 +1,8 @@
 local Player = {}
 Player.__index = Player
 
-local SLIDE_INERTIA_TILES = 1
+local MOVE_DURATION = 0.14
+local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 -- 25% faster on ice
 
 local function directionFromKey(key)
   if key == "left" or key == "a" then
@@ -27,7 +28,7 @@ function Player.new(col, row)
     movement = {
       active = false,
       elapsed = 0,
-      duration = 0.14,
+      duration = MOVE_DURATION,
       fromCol = col,
       fromRow = row,
       toCol = col,
@@ -39,9 +40,6 @@ function Player.new(col, row)
       active = false,
       dx = 0,
       dy = 0,
-      pendingDx = nil,
-      pendingDy = nil,
-      inertiaLeft = 0,
     },
   }, Player)
 end
@@ -51,9 +49,6 @@ function Player:stopSlide()
   slide.active = false
   slide.dx = 0
   slide.dy = 0
-  slide.pendingDx = nil
-  slide.pendingDy = nil
-  slide.inertiaLeft = 0
 end
 
 function Player:canStepTo(grid, col, row)
@@ -76,6 +71,7 @@ function Player:beginStep(grid, col, row, deadly)
   local movement = self.movement
   movement.active = true
   movement.elapsed = 0
+  movement.duration = grid:isIceTile(col, row) and ICE_MOVE_DURATION or MOVE_DURATION
   movement.fromCol = self.col
   movement.fromRow = self.row
   movement.toCol = col
@@ -88,38 +84,6 @@ function Player:beginStep(grid, col, row, deadly)
   self.movesRemaining = self.movesRemaining - moveCost
 end
 
-function Player:queueSlideTurn(dx, dy)
-  local slide = self.slide
-  if not slide.active then
-    return
-  end
-  if dx == slide.dx and dy == slide.dy then
-    return
-  end
-  -- Keep sliding the original way a bit, then bend into the new direction.
-  if slide.pendingDx == dx and slide.pendingDy == dy then
-    return
-  end
-  slide.pendingDx = dx
-  slide.pendingDy = dy
-  slide.inertiaLeft = SLIDE_INERTIA_TILES
-end
-
-function Player:applyPendingSlideTurn()
-  local slide = self.slide
-  if slide.pendingDx == nil then
-    return
-  end
-  if slide.inertiaLeft > 0 then
-    slide.inertiaLeft = slide.inertiaLeft - 1
-    return
-  end
-  slide.dx = slide.pendingDx
-  slide.dy = slide.pendingDy
-  slide.pendingDx = nil
-  slide.pendingDy = nil
-end
-
 function Player:continueSlide(grid)
   local slide = self.slide
   if not slide.active or self.dead or self.movement.active then
@@ -130,8 +94,6 @@ function Player:continueSlide(grid)
     self:stopSlide()
     return
   end
-
-  self:applyPendingSlideTurn()
 
   local nextCol = self.col + slide.dx
   local nextRow = self.row + slide.dy
@@ -181,10 +143,8 @@ function Player:keypressed(key, grid)
     return
   end
 
+  -- Locked in until the slide hits something.
   if self.movement.active or self.slide.active then
-    if self.slide.active then
-      self:queueSlideTurn(dx, dy)
-    end
     return
   end
 
@@ -204,9 +164,6 @@ function Player:keypressed(key, grid)
     slide.active = true
     slide.dx = dx
     slide.dy = dy
-    slide.pendingDx = nil
-    slide.pendingDy = nil
-    slide.inertiaLeft = 0
   else
     self:stopSlide()
   end
