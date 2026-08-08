@@ -190,12 +190,12 @@ local function buildLevelPreview(name)
   local pw = math.max(64, CARD_W - PREVIEW_PAD * 2)
   local ph = math.max(48, math.floor(pw * MAP_ROWS / MAP_COLS))
 
-  -- load the real level into a throwaway grid and snapshot its draw
   local snap = Grid.new(40, MAP_COLS, MAP_ROWS, false)
   local contents = Editor.readLevelContents(name)
   if contents then
     snap:load(contents)
   end
+
   snap:setGround(SPAWN_COL, SPAWN_ROW)
   snap:removeFire(SPAWN_COL, SPAWN_ROW)
   snap:removeIce(SPAWN_COL, SPAWN_ROW)
@@ -232,11 +232,16 @@ local function buildLevelPreview(name)
   love.graphics.clear(0.04, 0.08, 0.16, 1)
 
   love.graphics.push()
-  love.graphics.translate(ox, oy)
-  love.graphics.scale(scale, scale)
-  snap:draw(1)
 
-  -- Spawn ice cube sprite (matches the in-game player).
+  love.graphics.translate(
+    pw * 0.5 - centerWorldX * scale,
+    ph * 0.5 - centerWorldY * scale
+  )
+
+  love.graphics.scale(scale, scale)
+
+  snap:draw(1, nil, false)
+
   local cx, cy = snap:tileCenter(SPAWN_COL, SPAWN_ROW)
   local size = Perspective.isSide() and 30 or 26
   Player.drawSprite(cx, cy, size, 0, Perspective.mode)
@@ -245,6 +250,7 @@ local function buildLevelPreview(name)
   love.graphics.setCanvas(prevCanvas)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setLineWidth(1)
+
   return canvas
 end
 
