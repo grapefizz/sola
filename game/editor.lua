@@ -4,7 +4,8 @@ Editor.__index = Editor
 local LEVELS_DIR = "levels"
 local HUD_X, HUD_Y = 10, 10
 local HUD_W = 160
-local HUD_H = 192
+local HUD_H = 220
+local TOOL_BUTTON_COUNT = 7
 local BUTTON_X = 18
 local BUTTON_W = 144
 local BUTTON_H = 24
@@ -241,7 +242,7 @@ function Editor:getDropdownRect()
   end
 
   local x = HUD_X + HUD_W + 6
-  local y = buttonY(6)
+  local y = buttonY(TOOL_BUTTON_COUNT)
   local w = 168
   local h = 8 + slots * DROPDOWN_ITEM_H
 
@@ -291,7 +292,6 @@ function Editor:isOverHud(x, y)
   if self:isOverDropdown(x, y) then
     return true
   end
-
   return x >= HUD_X
     and x <= HUD_X + HUD_W
     and y >= HUD_Y
@@ -313,6 +313,7 @@ end
 function Editor:protectSpawn(grid)
   grid:setGround(self.spawnCol, self.spawnRow)
   grid:removeFire(self.spawnCol, self.spawnRow)
+  grid:removeIce(self.spawnCol, self.spawnRow)
   grid:removeSnowflake(self.spawnCol, self.spawnRow)
 end
 
@@ -391,15 +392,14 @@ function Editor:applyTool(tool, col, row, grid)
   if tool == "ground" then
     grid:setGround(col, row)
     grid:removeFire(col, row)
+    grid:removeIce(col, row)
     grid:removeSnowflake(col, row)
-
   elseif tool == "fire" then
     grid:addFire(col, row)
-    grid:removeSnowflake(col, row)
-
+  elseif tool == "ice" then
+    grid:addIce(col, row)
   elseif tool == "snowflake" then
     grid:addSnowflake(col, row)
-
   elseif tool == "erase" then
     grid:erase(col, row)
   end
@@ -456,8 +456,7 @@ function Editor:hitToolButton(x, y)
   if x < BUTTON_X or x > BUTTON_X + BUTTON_W then
     return nil
   end
-
-  for i = 1, 6 do
+  for i = 1, TOOL_BUTTON_COUNT do
     local y0 = buttonY(i)
 
     if y >= y0 and y <= y0 + BUTTON_H then
@@ -539,19 +538,22 @@ function Editor:mousepressed(x, y, button, grid, camera)
 
     elseif toolButton == 3 then
       self.loadDropdownOpen = false
-      self.tool = "snowflake"
+      self.tool = "ice"
       return
 
     elseif toolButton == 4 then
       self.loadDropdownOpen = false
-      self.tool = "erase"
+      self.tool = "snowflake"
       return
 
     elseif toolButton == 5 then
+      self.loadDropdownOpen = false
+      self.tool = "erase"
+      return
+    elseif toolButton == 6 then
       self:beginSave()
       return
-
-    elseif toolButton == 6 then
+    elseif toolButton == 7 then
       self:toggleLoadDropdown()
       return
     end
@@ -637,10 +639,12 @@ function Editor:keypressed(key, grid)
     self.loadDropdownOpen = false
 
   elseif key == "3" then
+    self.tool = "ice"
+    self.loadDropdownOpen = false
+  elseif key == "4" then
     self.tool = "snowflake"
     self.loadDropdownOpen = false
-
-  elseif key == "4" then
+  elseif key == "5" then
     self.tool = "erase"
     self.loadDropdownOpen = false
 
@@ -816,15 +820,7 @@ function Editor:draw(grid, camera)
   )
 
   love.graphics.setColor(0.025, 0.05, 0.09, 0.94)
-  love.graphics.rectangle(
-    "fill",
-    HUD_X,
-    HUD_Y,
-    HUD_W,
-    HUD_H,
-    6,
-    6
-  )
+  love.graphics.rectangle("fill", HUD_X, HUD_Y, HUD_W, HUD_H, 6, 6)
 
   local previousFont = love.graphics.getFont()
   local font = getHudFont()
@@ -838,6 +834,7 @@ function Editor:draw(grid, camera)
   local tools = {
     { name = "ground", label = "Ground" },
     { name = "fire", label = "Fire" },
+    { name = "ice", label = "Ice Floor" },
     { name = "snowflake", label = "Snowflake" },
     { name = "erase", label = "Erase" },
     { name = "save", label = "Save" },
@@ -846,24 +843,11 @@ function Editor:draw(grid, camera)
 
   for index, tool in ipairs(tools) do
     local y = buttonY(index)
-
-    if self.tool == tool.name
-      or (tool.name == "load" and self.loadDropdownOpen) then
-
+    if self.tool == tool.name or (tool.name == "load" and self.loadDropdownOpen) then
       if tool.name == "snowflake" then
-        love.graphics.setColor(
-          0.20,
-          0.55,
-          0.90,
-          0.9
-        )
+        love.graphics.setColor(0.20, 0.55, 0.90, 0.9)
       else
-        love.graphics.setColor(
-          0.18,
-          0.58,
-          0.86,
-          0.8
-        )
+        love.graphics.setColor(0.18, 0.58, 0.86, 0.8)
       end
     else
       love.graphics.setColor(
@@ -1059,34 +1043,11 @@ function Editor:draw(grid, camera)
   end
 
   if self.status ~= "" and not self.namingOpen then
-    love.graphics.setColor(
-      0.025,
-      0.05,
-      0.09,
-      0.9
-    )
-
-    love.graphics.rectangle(
-      "fill",
-      10,
-      202,
-      280,
-      24,
-      4,
-      4
-    )
-
-    love.graphics.setColor(
-      0.85,
-      0.93,
-      1
-    )
-
-    love.graphics.print(
-      self.status,
-      18,
-      202 + textY
-    )
+    local statusY = HUD_Y + HUD_H + 8
+    love.graphics.setColor(0.025, 0.05, 0.09, 0.9)
+    love.graphics.rectangle("fill", 10, statusY, 280, 24, 4, 4)
+    love.graphics.setColor(0.85, 0.93, 1)
+    love.graphics.print(self.status, 18, statusY + textY)
   end
 
   if self.namingOpen then
