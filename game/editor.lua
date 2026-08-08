@@ -63,10 +63,12 @@ local function getPreviewSprites()
     ground = love.graphics.newImage("assets/floor.png"),
     ice = love.graphics.newImage("assets/ice.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
+    fire = love.graphics.newImage("assets/fire.png"),
   }
   previewSprites.ground:setFilter("linear", "linear")
   previewSprites.ice:setFilter("linear", "linear")
   previewSprites.snowflake:setFilter("linear", "linear")
+  previewSprites.fire:setFilter("linear", "linear")
   return previewSprites
 end
 
@@ -91,38 +93,21 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha)
       size / sprites.ground:getHeight()
     )
   elseif tool == "fire" then
-    local s = size
-    withAlpha(0.42, 0.26, 0.12, 0.95, alpha)
-    love.graphics.setLineWidth(3)
-    love.graphics.line(cx - s * 0.28, cy + s * 0.18, cx + s * 0.28, cy + s * 0.18)
-    withAlpha(0.32, 0.18, 0.08, 0.95, alpha)
-    love.graphics.setLineWidth(2.5)
-    love.graphics.line(cx - s * 0.22, cy + s * 0.26, cx + s * 0.12, cy + s * 0.08)
-    love.graphics.line(cx + s * 0.22, cy + s * 0.26, cx - s * 0.12, cy + s * 0.08)
-    withAlpha(0.95, 0.28, 0.05, 0.95, alpha)
-    love.graphics.polygon(
-      "fill",
-      cx, cy - s * 0.34,
-      cx + s * 0.18, cy + s * 0.12,
-      cx + s * 0.08, cy + s * 0.06,
-      cx, cy + s * 0.16,
-      cx - s * 0.08, cy + s * 0.06,
-      cx - s * 0.18, cy + s * 0.12
+    local targetSize = size * 0.95
+    local scale = targetSize / math.max(
+      sprites.fire:getWidth(),
+      sprites.fire:getHeight()
     )
-    withAlpha(1.00, 0.62, 0.10, 0.95, alpha)
-    love.graphics.polygon(
-      "fill",
-      cx, cy - s * 0.22,
-      cx + s * 0.10, cy + s * 0.08,
-      cx, cy + s * 0.10,
-      cx - s * 0.10, cy + s * 0.08
-    )
-    withAlpha(1.00, 0.92, 0.45, 0.95, alpha)
-    love.graphics.polygon(
-      "fill",
-      cx, cy - s * 0.10,
-      cx + s * 0.05, cy + s * 0.06,
-      cx - s * 0.05, cy + s * 0.06
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(
+      sprites.fire,
+      cx,
+      cy,
+      0,
+      scale,
+      scale,
+      sprites.fire:getWidth() / 2,
+      sprites.fire:getHeight() / 2
     )
   elseif tool == "ice" then
     withAlpha(1, 1, 1, 1, alpha)
@@ -344,13 +329,31 @@ local function buildToolIcon(toolEntry, wallFacing)
   love.graphics.clear(0.05, 0.10, 0.16, 1)
 
   if toolEntry.icon == "tile" then
-    local tileSize = 40
-    local snap = Grid.new(tileSize, 1, 1, false)
-    placeToolOnGrid(toolEntry.name, 1, 1, snap, wallFacing or "left")
-    love.graphics.push()
-    love.graphics.scale(ICON_SIZE / tileSize, ICON_SIZE / tileSize)
-    snap:draw(1)
-    love.graphics.pop()
+    if toolEntry.name == "fire" then
+      -- Static campfire art for the sidebar; gameplay uses the animated sheet.
+      local fire = getPreviewSprites().fire
+      local targetSize = ICON_SIZE * 0.92
+      local scale = targetSize / math.max(fire:getWidth(), fire:getHeight())
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        fire,
+        ICON_SIZE / 2,
+        ICON_SIZE / 2,
+        0,
+        scale,
+        scale,
+        fire:getWidth() / 2,
+        fire:getHeight() / 2
+      )
+    else
+      local tileSize = 40
+      local snap = Grid.new(tileSize, 1, 1, false)
+      placeToolOnGrid(toolEntry.name, 1, 1, snap, wallFacing or "left")
+      love.graphics.push()
+      love.graphics.scale(ICON_SIZE / tileSize, ICON_SIZE / tileSize)
+      snap:draw(1)
+      love.graphics.pop()
+    end
   else
     drawActionIcon(toolEntry.icon or toolEntry.name, ICON_SIZE)
   end
