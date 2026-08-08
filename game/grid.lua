@@ -2,6 +2,9 @@ local Grid = {}
 Grid.__index = Grid
 
 local TEXTURE_GRID_SIZE = 1
+local FIRE_FRAME_SIZE = 128
+local FIRE_FRAME_COUNT = 9
+local FIRE_FRAME_DURATION = 1 / 12
 local tileSprites
 local groundQuadCache = {}
 local iceQuadCache = {}
@@ -15,10 +18,22 @@ local function getTileSprites()
     ground = love.graphics.newImage("assets/floor.png"),
     ice = love.graphics.newImage("assets/ice.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
+    fire = love.graphics.newImage("assets/fire-sheet.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
   tileSprites.snowflake:setFilter("linear", "linear")
+  tileSprites.fire:setFilter("linear", "linear")
+  tileSprites.fireFrames = {}
+  for index = 1, FIRE_FRAME_COUNT do
+    tileSprites.fireFrames[index] = love.graphics.newQuad(
+      (index - 1) * FIRE_FRAME_SIZE,
+      0,
+      FIRE_FRAME_SIZE,
+      FIRE_FRAME_SIZE,
+      tileSprites.fire:getDimensions()
+    )
+  end
   tileSprites.ground:setWrap("repeat", "repeat")
   tileSprites.ice:setWrap("repeat", "repeat")
   return tileSprites
@@ -961,21 +976,23 @@ function Grid:draw(zoom, camera, showGrid)
 
   for _, fire in pairs(self.fireTiles) do
     if isVisible(fire) then
-    local centerX, centerY = self:tileCenter(fire.col, fire.row)
-    love.graphics.setColor(0.95, 0.24, 0.04)
-    love.graphics.polygon(
-      "fill",
-      centerX, centerY - 15,
-      centerX + 12, centerY + 12,
-      centerX - 12, centerY + 12
-    )
-    love.graphics.setColor(1.00, 0.76, 0.12)
-    love.graphics.polygon(
-      "fill",
-      centerX, centerY - 6,
-      centerX + 6, centerY + 10,
-      centerX - 6, centerY + 10
-    )
+      local centerX, centerY = self:tileCenter(fire.col, fire.row)
+      local targetSize = self.size * 0.95
+      local scale = targetSize / FIRE_FRAME_SIZE
+      local time = (love.timer and love.timer.getTime()) or 0
+      local frameIndex = math.floor(time / FIRE_FRAME_DURATION) % FIRE_FRAME_COUNT + 1
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.fire,
+        sprites.fireFrames[frameIndex],
+        centerX,
+        centerY,
+        0,
+        scale,
+        scale,
+        FIRE_FRAME_SIZE / 2,
+        FIRE_FRAME_SIZE / 2
+      )
     end
   end
 end
