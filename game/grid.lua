@@ -14,6 +14,7 @@ function Grid.new(size, columns, rows, fillGround)
     iceTiles = {},
     snowflakeTiles = {},
     teaTiles = {},
+    wallTiles = {},
     fireRadius = 1,
   }, Grid)
 
@@ -78,6 +79,7 @@ function Grid:erase(col, row)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.wallTiles[key] = nil
 end
 
 
@@ -89,6 +91,7 @@ function Grid:clear()
   self.iceTiles = {}
   self.snowflakeTiles = {}
   self.teaTiles = {}
+  self.wallTiles = {}
 end
 
 
@@ -104,6 +107,7 @@ function Grid:addWater(col, row)
     and not self:isInFireZone(col, row)
     and not self:isIceTile(col, row)
     and not self:isTeaTile(col, row)
+    and not self:isWallTile(col, row)
   then
     self.waterTiles[self:key(col, row)] = { col = col, row = row }
   end
@@ -127,6 +131,7 @@ function Grid:addFire(col, row)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.wallTiles[key] = nil
   self.fireTiles[key] = { col = col, row = row }
 end
 
@@ -152,6 +157,7 @@ function Grid:addIce(col, row)
   self.waterTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.wallTiles[key] = nil
   self.iceTiles[key] = { col = col, row = row }
 end
 
@@ -185,6 +191,7 @@ function Grid:addSnowflake(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.teaTiles[key] = nil
+  self.wallTiles[key] = nil
   self.snowflakeTiles[key] = { col = col, row = row }
 end
 
@@ -219,6 +226,7 @@ function Grid:addTea(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
+  self.wallTiles[key] = nil
   self.teaTiles[key] = { col = col, row = row }
 end
 
@@ -228,6 +236,146 @@ end
 
 function Grid:isTeaTile(col, row)
   return self.teaTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:addWall(col, row, texture, lean, options)
+  if not self:isInside(col, row) then
+    return
+  end
+  options = options or {}
+  if texture ~= "side" and texture ~= "front" then
+    texture = "front"
+  end
+  if lean ~= "left" and lean ~= "right" then
+    lean = "left"
+  end
+
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.wallTiles[key] = {
+    col = col,
+    row = row,
+    texture = texture,
+    lean = texture == "side" and lean or nil,
+    creased = options.creased and true or false,
+  }
+end
+
+function Grid:removeWall(col, row)
+  self.wallTiles[self:key(col, row)] = nil
+end
+
+function Grid:isWallTile(col, row)
+  return self.wallTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:getWallTexture(col, row)
+  local wall = self.wallTiles[self:key(col, row)]
+  return wall and wall.texture or nil
+end
+
+function Grid:isSideWallTexture(col, row)
+  return self:getWallTexture(col, row) == "side"
+end
+
+function Grid:isFrontWallTexture(col, row)
+  return self:getWallTexture(col, row) == "front"
+end
+
+function Grid:getWallDrawKind(col, row)
+  local wall = self.wallTiles[self:key(col, row)]
+  if not wall then
+    return nil
+  end
+  if wall.texture == "side" then
+    return "side", wall.creased and true or false
+  end
+  return "front", false
+end
+
+function Grid:getWallLean(col, row)
+  local wall = self.wallTiles[self:key(col, row)]
+  if wall and wall.lean then
+    return wall.lean
+  end
+
+  local hasLeft = self:isWallTile(col - 1, row)
+  local hasRight = self:isWallTile(col + 1, row)
+
+  if hasRight and not hasLeft then
+    return "right"
+  end
+  if hasLeft and not hasRight then
+    return "left"
+  end
+
+  local leftHits, rightHits = self:getWallColumnContacts(col, row)
+
+  if rightHits > leftHits then
+    return "right"
+  end
+  if leftHits > rightHits then
+    return "left"
+  end
+
+  return "left"
+end
+
+function Grid:getWallColumnContacts(col, row)
+  local leftHits, rightHits = 0, 0
+  local scanRow = row
+
+  while self:isWallTile(col, scanRow - 1) do
+    scanRow = scanRow - 1
+  end
+
+  while self:isWallTile(col, scanRow) do
+    if self:isWallTile(col - 1, scanRow) then
+      leftHits = leftHits + 1
+    end
+    if self:isWallTile(col + 1, scanRow) then
+      rightHits = rightHits + 1
+    end
+    scanRow = scanRow + 1
+  end
+
+  return leftHits, rightHits
+end
+
+function Grid:getSideWallStrip(col, row)
+  local x = (col - 1) * self.size
+  local stripW = self.size * 0.5
+  local lean = self:getWallLean(col, row)
+  local stripX = lean == "right" and (x + self.size - stripW) or x
+  return stripX, stripW, stripX + stripW
+end
+
+function Grid:getConnectedSideWallFurthestRight(col, row)
+  local furthest = nil
+  local neighbors = {
+    { col - 1, row },
+    { col + 1, row },
+    { col, row - 1 },
+    { col, row + 1 },
+  }
+
+  for i = 1, #neighbors do
+    local nc, nr = neighbors[i][1], neighbors[i][2]
+    local wall = self.wallTiles[self:key(nc, nr)]
+    if wall and wall.texture == "side" and not wall.creased then
+      local _, _, right = self:getSideWallStrip(nc, nr)
+      if not furthest or right > furthest then
+        furthest = right
+      end
+    end
+  end
+
+  return furthest
 end
 
 function Grid:getMoveCost(col, row)
@@ -258,6 +406,16 @@ function Grid:serialize()
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
         cells[col] = "S"
+      elseif self:isWallTile(col, row) then
+        local wall = self.wallTiles[self:key(col, row)]
+        local lean = wall.lean or "left"
+        if wall.texture == "front" then
+          cells[col] = "W"
+        elseif wall.creased then
+          cells[col] = lean == "right" and "D" or "C"
+        else
+          cells[col] = lean == "right" and "E" or "V"
+        end
       elseif self:hasGround(col, row) then
         cells[col] = "#"
       else
@@ -290,6 +448,16 @@ function Grid:load(serialized)
         self:addSnowflake(col, row)
       elseif cell == "T" then
         self:addTea(col, row)
+      elseif cell == "W" then
+        self:addWall(col, row, "front", nil, { silent = true })
+      elseif cell == "V" then
+        self:addWall(col, row, "side", "left", { silent = true })
+      elseif cell == "E" then
+        self:addWall(col, row, "side", "right", { silent = true })
+      elseif cell == "C" then
+        self:addWall(col, row, "side", "left", { silent = true, creased = true })
+      elseif cell == "D" then
+        self:addWall(col, row, "side", "right", { silent = true, creased = true })
       end
     end
     row = row + 1
@@ -449,6 +617,100 @@ function Grid:draw(zoom, camera)
       love.graphics.setColor(0.95, 0.35, 0.34)
       love.graphics.setLineWidth(2 / zoom)
       love.graphics.line(centerX + 4, centerY - 8, centerX + 10, centerY - 20)
+    end
+  end
+
+  for _, wall in pairs(self.wallTiles) do
+    if isVisible(wall) then
+      local kind, creased = self:getWallDrawKind(wall.col, wall.row)
+      if kind == "front" then
+        local x = (wall.col - 1) * self.size
+        local y = (wall.row - 1) * self.size
+        love.graphics.setColor(0.55, 0.38, 0.28, 0.95)
+        love.graphics.rectangle(
+          "fill",
+          x + 1,
+          y + 1,
+          self.size - 2,
+          self.size - 2,
+          2,
+          2
+        )
+        love.graphics.setColor(0.78, 0.58, 0.42, 0.9)
+        love.graphics.setLineWidth(1 / zoom)
+        love.graphics.rectangle(
+          "line",
+          x + 1,
+          y + 1,
+          self.size - 2,
+          self.size - 2,
+          2,
+          2
+        )
+      end
+    end
+  end
+
+  -- Side walls (placed + front walls auto-converted where they touch a side wall)
+  for _, wall in pairs(self.wallTiles) do
+    if isVisible(wall) then
+      local kind, creased = self:getWallDrawKind(wall.col, wall.row)
+      if kind == "side" then
+        local x = (wall.col - 1) * self.size
+        local y = (wall.row - 1) * self.size
+        local stripW = self.size * 0.5
+        local stripX
+
+        if creased then
+          local furthestRight = self:getConnectedSideWallFurthestRight(wall.col, wall.row)
+          if furthestRight then
+            stripX = furthestRight - stripW
+            stripX = math.max(x, math.min(x + self.size - stripW, stripX))
+          else
+            local lean = self:getWallLean(wall.col, wall.row)
+            stripX = lean == "right" and (x + self.size - stripW) or x
+          end
+        else
+          local lean = self:getWallLean(wall.col, wall.row)
+          stripX = lean == "right" and (x + self.size - stripW) or x
+        end
+
+        love.graphics.setColor(0.32, 0.48, 0.62, 0.95)
+        love.graphics.rectangle(
+          "fill",
+          stripX,
+          y + 1,
+          stripW,
+          self.size - 2,
+          2,
+          2
+        )
+        love.graphics.setColor(0.55, 0.72, 0.88, 0.85)
+        love.graphics.setLineWidth(1 / zoom)
+        love.graphics.rectangle(
+          "line",
+          stripX,
+          y + 1,
+          stripW,
+          self.size - 2,
+          2,
+          2
+        )
+
+        if creased then
+          local creaseX = stripX + stripW
+          local furthestRight = self:getConnectedSideWallFurthestRight(wall.col, wall.row)
+          if furthestRight then
+            creaseX = math.max(x + 1, math.min(x + self.size - 1, furthestRight))
+          end
+          love.graphics.setColor(0.16, 0.24, 0.34, 0.95)
+          love.graphics.setLineWidth(2.5 / zoom)
+          love.graphics.line(creaseX, y + 2, creaseX, y + self.size - 2)
+          love.graphics.setColor(0.70, 0.84, 0.96, 0.55)
+          love.graphics.setLineWidth(1 / zoom)
+          love.graphics.line(creaseX - 2, y + 3, creaseX - 2, y + self.size - 3)
+        end
+      end
     end
   end
 

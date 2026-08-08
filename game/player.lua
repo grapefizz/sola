@@ -54,7 +54,9 @@ end
 
 function Player:canStepTo(grid, col, row)
   col, row = grid:clamp(col, row)
-  if (col == self.col and row == self.row) or not grid:hasGround(col, row) then
+  if (col == self.col and row == self.row)
+    or not grid:hasGround(col, row)
+    or grid:isWallTile(col, row) then
     return false
   end
   if self.dead or self.won then
