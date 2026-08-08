@@ -70,7 +70,10 @@ function Grid:clearWater()
 end
 
 function Grid:addWater(col, row)
-  if self:hasGround(col, row) and not self:isInFireZone(col, row) then
+  if self:hasGround(col, row)
+    and not self:isInFireZone(col, row)
+    and not self:isIceTile(col, row)
+  then
     self.waterTiles[self:key(col, row)] = { col = col, row = row }
   end
 end
@@ -103,6 +106,7 @@ function Grid:addIce(col, row)
   end
   self:setGround(col, row)
   self.fireTiles[self:key(col, row)] = nil
+  self.waterTiles[self:key(col, row)] = nil
   self.iceTiles[self:key(col, row)] = { col = col, row = row }
 end
 
