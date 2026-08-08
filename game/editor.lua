@@ -1186,8 +1186,7 @@ function Editor:draw(grid, camera)
   )
   love.graphics.setColor(0.58, 0.75, 0.9)
   love.graphics.printf(
-    "Left-drag Paint  ·  Right-drag Erase  ·  R Flip Side Facing  ·  Ctrl+S Save  ·  L Load  ·  N/C New  ·  F Fill",
-    "Shift+drag Rectangle  ·  Right-drag Erase",
+    "Left-drag Paint  ·  Shift+drag Rectangle  ·  Right-drag Erase  ·  R Flip Side Facing",
     12,
     legendY + 27,
     screenWidth - 24,
