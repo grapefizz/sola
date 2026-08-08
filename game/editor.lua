@@ -4,8 +4,8 @@ Editor.__index = Editor
 local LEVELS_DIR = "levels"
 local HUD_X, HUD_Y = 10, 10
 local HUD_W = 160
-local HUD_H = 332
-local TOOL_BUTTON_COUNT = 11
+local HUD_H = 360
+local TOOL_BUTTON_COUNT = 12
 local BUTTON_X = 18
 local BUTTON_W = 144
 local BUTTON_H = 24
@@ -329,6 +329,7 @@ function Editor:protectSpawn(grid)
   grid:removeSnowflake(self.spawnCol, self.spawnRow)
   grid:removeTea(self.spawnCol, self.spawnRow)
   grid:removeWall(self.spawnCol, self.spawnRow)
+  grid:removeBoulder(self.spawnCol, self.spawnRow)
 end
 
 function Editor:beginSave()
@@ -410,6 +411,7 @@ function Editor:applyTool(tool, col, row, grid)
     grid:removeSnowflake(col, row)
     grid:removeTea(col, row)
     grid:removeWall(col, row)
+    grid:removeBoulder(col, row)
   elseif tool == "fire" then
     grid:addFire(col, row)
   elseif tool == "ice" then
@@ -424,6 +426,8 @@ function Editor:applyTool(tool, col, row, grid)
     grid:addWall(col, row, "front")
   elseif tool == "cracked_wall" then
     grid:addWall(col, row, "front", nil, { cracked = true })
+  elseif tool == "boulder" then
+    grid:addBoulder(col, row)
   elseif tool == "erase" then
     grid:erase(col, row)
   end
@@ -588,12 +592,16 @@ function Editor:mousepressed(x, y, button, grid, camera)
       return
     elseif toolButton == 9 then
       self.loadDropdownOpen = false
-      self.tool = "erase"
+      self.tool = "boulder"
       return
     elseif toolButton == 10 then
-      self:beginSave()
+      self.loadDropdownOpen = false
+      self.tool = "erase"
       return
     elseif toolButton == 11 then
+      self:beginSave()
+      return
+    elseif toolButton == 12 then
       self:toggleLoadDropdown()
       return
     end
@@ -734,6 +742,9 @@ function Editor:keypressed(key, grid)
     self.tool = "cracked_wall"
     self.loadDropdownOpen = false
   elseif key == "9" then
+    self.tool = "boulder"
+    self.loadDropdownOpen = false
+  elseif key == "0" then
     self.tool = "erase"
     self.loadDropdownOpen = false
 
@@ -961,6 +972,7 @@ function Editor:draw(grid, camera)
     { name = "side_wall", label = "Side Wall" },
     { name = "front_wall", label = "Front Wall" },
     { name = "cracked_wall", label = "Cracked Wall" },
+    { name = "boulder", label = "Boulder" },
     { name = "erase", label = "Erase" },
     { name = "save", label = "Save" },
     { name = "load", label = "Load" },
@@ -977,6 +989,8 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.55, 0.38, 0.28, 0.9)
       elseif tool.name == "cracked_wall" then
         love.graphics.setColor(0.42, 0.28, 0.20, 0.95)
+      elseif tool.name == "boulder" then
+        love.graphics.setColor(0.45, 0.43, 0.40, 0.95)
       else
         love.graphics.setColor(0.18, 0.58, 0.86, 0.8)
       end
@@ -1190,7 +1204,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Iced Tea  ·  6 Side Wall  ·  7 Front Wall  ·  8 Cracked  ·  9 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Iced Tea  ·  6 Side  ·  7 Front  ·  8 Cracked  ·  9 Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,
