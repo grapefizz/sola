@@ -87,13 +87,19 @@ local function restartRun()
   grid:addWater(player.col, player.row)
 end
 
-local function startPlay()
+local function startPlay(openEditor)
   grid = Grid.new(40, 20, 15)
   editor = Editor.new(SPAWN_COL, SPAWN_ROW)
   grid:addFire(13, 8)
-  editor:setActive(false)
   restartRun()
-  love.window.setTitle("Ice Cube — Play")
+  if openEditor then
+    grid:clearWater()
+    editor:setActive(true)
+    love.window.setTitle("Ice Cube — Level Editor")
+  else
+    editor:setActive(false)
+    love.window.setTitle("Ice Cube — Play")
+  end
 end
 
 local function clamp(v, a, b)
@@ -441,7 +447,11 @@ local function activate(item)
       end
     end
   end
-  if not item or item.locked then
+  if not item then
+    return
+  end
+  -- Level Editor stays visually locked (padlock) but still opens
+  if item.locked and item.id ~= "editor" then
     playSfx(sfxClick)
     bumpShake(2.5, 0.12)
     return
@@ -451,7 +461,10 @@ local function activate(item)
   local id = item.id
   if id == "play" then
     state = "play"
-    startPlay()
+    startPlay(false)
+  elseif id == "editor" then
+    state = "play"
+    startPlay(true)
   elseif id == "settings" then
     state = "settings"
     intro = 0
