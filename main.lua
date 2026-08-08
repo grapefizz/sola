@@ -131,6 +131,10 @@ local SPAWN_COL = math.ceil(MAP_COLS / 2)
 local SPAWN_ROW = math.ceil(MAP_ROWS / 2)
 local grid, player, camera, editor
 
+-- Smooth camera follow
+local cameraFollowX, cameraFollowY
+local cameraFollowSpeed = 10
+
 local function loadProgress()
   progress.finished = {}
   local data = love.filesystem.read(PROGRESS_FILE)
@@ -286,6 +290,7 @@ local function restartRun()
   player = Player.new(SPAWN_COL, SPAWN_ROW)
   local cameraX, cameraY = grid:tileCenter(player.col, player.row)
   camera = Camera.new(cameraX, cameraY, 2)
+  cameraFollowX, cameraFollowY = cameraX, cameraY
   grid:addWater(player.col, player.row)
   levelCompleteFlash = 0
 end
@@ -299,6 +304,7 @@ local function startPlay(openEditor, levelName)
     player = Player.new(SPAWN_COL, SPAWN_ROW)
     local cameraX, cameraY = grid:tileCenter(SPAWN_COL, SPAWN_ROW)
     camera = Camera.new(cameraX, cameraY, 2)
+    cameraFollowX, cameraFollowY = cameraX, cameraY
     editor:setActive(true)
     love.window.setTitle("Ice Cube — Level Editor")
     return
@@ -894,6 +900,12 @@ function love.update(dt)
       editor:update(dt, grid, camera)
     else
       player:update(dt, grid)
+      local cameraX, cameraY = grid:tileCenter(player.col, player.row)
+      local followT = 1 - math.exp(-cameraFollowSpeed * dt)
+      cameraFollowX = cameraFollowX + (cameraX - cameraFollowX) * followT
+      cameraFollowY = cameraFollowY + (cameraY - cameraFollowY) * followT
+      camera.x = cameraFollowX
+      camera.y = cameraFollowY
       -- Reaching the iced-tea goal is the only completion condition.
       if currentLevelName
         and player.won
