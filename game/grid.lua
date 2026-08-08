@@ -73,8 +73,13 @@ function Grid.new(size, columns, rows, fillGround)
     iceTiles = {},
     snowflakeTiles = {},
     teaTiles = {},
+    puzzlePieceTiles = {},
+    puzzleCanvasTiles = {},
+    puzzleDoorTiles = {},
     wallTiles = {},
     boulderTiles = {},
+    -- Painted zones: side-view presentation + jump. Default (absent) = top-down.
+    sideViewTiles = {},
     fireRadius = 1,
   }, Grid)
 
@@ -112,7 +117,14 @@ end
 
 
 function Grid:tileCenter(col, row)
-  return Perspective.tileCenter(col, row, self.size)
+  local sampleCol = math.floor(col + 0.5)
+  local sampleRow = math.floor(row + 0.5)
+  local mode = self:isSideView(sampleCol, sampleRow) and "side" or "topdown"
+  -- Editor / empty levels with no zones still honor the global preview toggle.
+  if not next(self.sideViewTiles) then
+    mode = Perspective.mode
+  end
+  return Perspective.tileCenter(col, row, self.size, mode)
 end
 
 function Grid:tileOrigin(col, row)
@@ -143,8 +155,12 @@ function Grid:occupiedBounds(padding)
   consider(self.iceTiles)
   consider(self.snowflakeTiles)
   consider(self.teaTiles)
+  consider(self.puzzlePieceTiles)
+  consider(self.puzzleCanvasTiles)
+  consider(self.puzzleDoorTiles)
   consider(self.wallTiles)
   consider(self.boulderTiles)
+  consider(self.sideViewTiles)
 
   if not minCol then
     return 1, self.columns, 1, self.rows
@@ -192,8 +208,12 @@ function Grid:erase(col, row)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
+  self.sideViewTiles[key] = nil
 end
 
 
@@ -205,8 +225,36 @@ function Grid:clear()
   self.iceTiles = {}
   self.snowflakeTiles = {}
   self.teaTiles = {}
+  self.puzzlePieceTiles = {}
+  self.puzzleCanvasTiles = {}
+  self.puzzleDoorTiles = {}
   self.wallTiles = {}
   self.boulderTiles = {}
+  self.sideViewTiles = {}
+end
+
+function Grid:addSideView(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self.sideViewTiles[self:key(col, row)] = { col = col, row = row }
+end
+
+function Grid:removeSideView(col, row)
+  self.sideViewTiles[self:key(col, row)] = nil
+end
+
+function Grid:isSideView(col, row)
+  return self.sideViewTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:toggleSideView(col, row)
+  if self:isSideView(col, row) then
+    self:removeSideView(col, row)
+    return false
+  end
+  self:addSideView(col, row)
+  return true
 end
 
 
@@ -222,6 +270,7 @@ function Grid:addWater(col, row)
     and not self:isInFireZone(col, row)
     and not self:isIceTile(col, row)
     and not self:isTeaTile(col, row)
+    and not self:isPuzzleCanvas(col, row)
     and not self:isBlocking(col, row)
   then
     self.waterTiles[self:key(col, row)] = { col = col, row = row }
@@ -246,6 +295,9 @@ function Grid:addFire(col, row)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
   self.fireTiles[key] = { col = col, row = row }
@@ -273,6 +325,9 @@ function Grid:addIce(col, row)
   self.waterTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.wallTiles[key] = nil
   -- Keep boulder so ice can sit under it.
   self.iceTiles[key] = { col = col, row = row }
@@ -308,6 +363,9 @@ function Grid:addSnowflake(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
   self.snowflakeTiles[key] = { col = col, row = row }
@@ -344,6 +402,9 @@ function Grid:addTea(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
   self.teaTiles[key] = { col = col, row = row }
@@ -355,6 +416,157 @@ end
 
 function Grid:isTeaTile(col, row)
   return self.teaTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:addPuzzlePiece(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  if self:isInFireZone(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
+  self.puzzlePieceTiles[key] = { col = col, row = row }
+end
+
+function Grid:removePuzzlePiece(col, row)
+  self.puzzlePieceTiles[self:key(col, row)] = nil
+end
+
+function Grid:consumePuzzlePiece(col, row)
+  local key = self:key(col, row)
+  if self.puzzlePieceTiles[key] then
+    self.puzzlePieceTiles[key] = nil
+    return true
+  end
+  return false
+end
+
+function Grid:isPuzzlePiece(col, row)
+  return self.puzzlePieceTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:addPuzzleCanvas(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
+  self.puzzleCanvasTiles[key] = {
+    col = col,
+    row = row,
+    slots = { false, false },
+  }
+end
+
+function Grid:removePuzzleCanvas(col, row)
+  self.puzzleCanvasTiles[self:key(col, row)] = nil
+end
+
+function Grid:isPuzzleCanvas(col, row)
+  return self.puzzleCanvasTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:canvasFilledCount(col, row)
+  local canvas = self.puzzleCanvasTiles[self:key(col, row)]
+  if not canvas then
+    return 0
+  end
+  local count = 0
+  for i = 1, #canvas.slots do
+    if canvas.slots[i] then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+function Grid:hasPuzzleCanvas()
+  return next(self.puzzleCanvasTiles) ~= nil
+end
+
+function Grid:areAllCanvasesComplete()
+  if not self:hasPuzzleCanvas() then
+    return true
+  end
+  for _, canvas in pairs(self.puzzleCanvasTiles) do
+    for i = 1, #canvas.slots do
+      if not canvas.slots[i] then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+function Grid:isTeaUnlocked()
+  return self:areAllCanvasesComplete()
+end
+
+-- Place one held piece into the first empty canvas slot. Returns true if deposited.
+function Grid:tryDepositPuzzlePiece(col, row)
+  local canvas = self.puzzleCanvasTiles[self:key(col, row)]
+  if not canvas then
+    return false
+  end
+  for i = 1, #canvas.slots do
+    if not canvas.slots[i] then
+      canvas.slots[i] = true
+      if self:areAllCanvasesComplete() then
+        self:openPuzzleDoors()
+      end
+      return true
+    end
+  end
+  return false
+end
+
+function Grid:addPuzzleDoor(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
+  self.puzzleDoorTiles[key] = { col = col, row = row }
+end
+
+function Grid:removePuzzleDoor(col, row)
+  self.puzzleDoorTiles[self:key(col, row)] = nil
+end
+
+function Grid:isPuzzleDoor(col, row)
+  return self.puzzleDoorTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:openPuzzleDoors()
+  self.puzzleDoorTiles = {}
 end
 
 function Grid:addWall(col, row, texture, lean, options)
@@ -382,6 +594,9 @@ function Grid:addWall(col, row, texture, lean, options)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.boulderTiles[key] = nil
 
   local fill = nil
@@ -537,6 +752,9 @@ function Grid:addBoulder(col, row, options)
   -- Keep ice so the boulder can sit on top of it.
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = {
     col = col,
@@ -570,7 +788,7 @@ end
 
 -- Optional sizeRatio lets half-walls open when the ice cube is small enough.
 function Grid:isBlocking(col, row, sizeRatio)
-  if self:isBoulderTile(col, row) then
+  if self:isBoulderTile(col, row) or self:isPuzzleDoor(col, row) then
     return true
   end
   if not self:isWallTile(col, row) then
@@ -710,6 +928,12 @@ function Grid:serialize()
         cells[col] = "F"
       elseif self:isTeaTile(col, row) then
         cells[col] = "T"
+      elseif self:isPuzzleDoor(col, row) then
+        cells[col] = "L"
+      elseif self:isPuzzleCanvas(col, row) then
+        cells[col] = "A"
+      elseif self:isPuzzlePiece(col, row) then
+        cells[col] = "J"
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
         cells[col] = boulder.cracked and "Q" or "O"
@@ -759,15 +983,35 @@ function Grid:serialize()
     end
     lines[row] = table.concat(cells)
   end
-  return table.concat(lines, "\n")
+
+  local map = table.concat(lines, "\n")
+  if not next(self.sideViewTiles) then
+    return map
+  end
+
+  local sideLines = { map, "@side" }
+  for row = 1, self.rows do
+    local cells = {}
+    for col = 1, self.columns do
+      cells[col] = self:isSideView(col, row) and "#" or "."
+    end
+    sideLines[#sideLines + 1] = table.concat(cells)
+  end
+  return table.concat(sideLines, "\n")
 end
 
 
 
 function Grid:load(serialized)
   self:clear()
+  local mapPart, sidePart = serialized:match("^(.-)\r?\n@side\r?\n(.*)$")
+  if not mapPart then
+    mapPart = serialized
+    sidePart = nil
+  end
+
   local row = 1
-  for line in serialized:gmatch("[^\r\n]+") do
+  for line in mapPart:gmatch("[^\r\n]+") do
     if row > self.rows then
       break
     end
@@ -789,6 +1033,12 @@ function Grid:load(serialized)
         self:addSnowflake(col, row)
       elseif cell == "T" then
         self:addTea(col, row)
+      elseif cell == "J" then
+        self:addPuzzlePiece(col, row)
+      elseif cell == "A" then
+        self:addPuzzleCanvas(col, row)
+      elseif cell == "L" then
+        self:addPuzzleDoor(col, row)
       elseif cell == "B" then
         self:addBoulder(col, row)
       elseif cell == "P" then
@@ -842,12 +1092,31 @@ function Grid:load(serialized)
     end
     row = row + 1
   end
+
+  if sidePart then
+    row = 1
+    for line in sidePart:gmatch("[^\r\n]+") do
+      if row > self.rows then
+        break
+      end
+      for col = 1, math.min(#line, self.columns) do
+        if line:sub(col, col) == "#" then
+          self:addSideView(col, row)
+        end
+      end
+      row = row + 1
+    end
+  end
 end
 
 
 
 function Grid:draw(zoom, camera, showGrid)
-  if Perspective.isSide() then
+  if next(self.sideViewTiles) then
+    -- Mixed level: top-down cells and side-view cells drawn together.
+    self:drawTopdown(zoom, camera, showGrid, "topdown")
+    self:drawSide(zoom, camera, showGrid, "side")
+  elseif Perspective.isSide() then
     self:drawSide(zoom, camera, showGrid)
   else
     self:drawTopdown(zoom, camera, showGrid)
@@ -885,6 +1154,103 @@ local function drawTeaCup(centerX, centerY, zoom, side)
   love.graphics.setColor(0.95, 0.35, 0.34)
   love.graphics.setLineWidth(2 / zoom)
   love.graphics.line(centerX + 4, centerY - 8, centerX + 10, centerY - 20)
+end
+
+-- Black puzzle piece silhouette (knob on top, notch on right).
+local function drawPuzzlePieceShape(centerX, centerY, size, zoom, alpha)
+  alpha = alpha or 1
+  local s = size * 0.42
+  local x, y = centerX, centerY
+  love.graphics.setColor(0.08, 0.08, 0.10, 0.98 * alpha)
+  love.graphics.polygon(
+    "fill",
+    x - s, y - s * 0.55,
+    x - s * 0.22, y - s * 0.55,
+    x - s * 0.22, y - s,
+    x + s * 0.22, y - s,
+    x + s * 0.22, y - s * 0.55,
+    x + s, y - s * 0.55,
+    x + s, y + s * 0.15,
+    x + s * 0.55, y + s * 0.15,
+    x + s * 0.55, y + s * 0.55,
+    x + s, y + s * 0.55,
+    x + s, y + s,
+    x - s, y + s
+  )
+  love.graphics.setColor(0.28, 0.28, 0.32, 0.9 * alpha)
+  love.graphics.setLineWidth(1.2 / zoom)
+  love.graphics.polygon(
+    "line",
+    x - s, y - s * 0.55,
+    x - s * 0.22, y - s * 0.55,
+    x - s * 0.22, y - s,
+    x + s * 0.22, y - s,
+    x + s * 0.22, y - s * 0.55,
+    x + s, y - s * 0.55,
+    x + s, y + s * 0.15,
+    x + s * 0.55, y + s * 0.15,
+    x + s * 0.55, y + s * 0.55,
+    x + s, y + s * 0.55,
+    x + s, y + s,
+    x - s, y + s
+  )
+end
+
+local function drawPuzzleCanvasAt(centerX, centerY, size, zoom, slots, side)
+  if side then
+    centerY = centerY - size * 0.38
+  end
+  local frame = size * 0.78
+  local x = centerX - frame * 0.5
+  local y = centerY - frame * 0.5
+  love.graphics.setColor(0.18, 0.16, 0.14, 0.95)
+  love.graphics.rectangle("fill", x, y, frame, frame, 3, 3)
+  love.graphics.setColor(0.55, 0.48, 0.38, 0.95)
+  love.graphics.setLineWidth(2 / zoom)
+  love.graphics.rectangle("line", x, y, frame, frame, 3, 3)
+
+  local slotW = frame * 0.36
+  local slotH = frame * 0.58
+  local gap = frame * 0.08
+  local slotY = y + (frame - slotH) * 0.5
+  local slotX1 = x + gap
+  local slotX2 = x + frame - gap - slotW
+
+  for index, slotX in ipairs({ slotX1, slotX2 }) do
+    local filled = slots and slots[index]
+    if filled then
+      drawPuzzlePieceShape(slotX + slotW * 0.5, slotY + slotH * 0.5, size * 0.72, zoom, 1)
+    else
+      love.graphics.setColor(0.10, 0.10, 0.12, 0.55)
+      love.graphics.rectangle("fill", slotX, slotY, slotW, slotH, 2, 2)
+      love.graphics.setColor(0.40, 0.36, 0.30, 0.7)
+      love.graphics.setLineWidth(1 / zoom)
+      love.graphics.rectangle("line", slotX, slotY, slotW, slotH, 2, 2)
+    end
+  end
+end
+
+local function drawPuzzleDoorAt(x, y, size, zoom, side)
+  local pad = size * (side and 0.08 or 0.1)
+  local dx = x + pad
+  local dy = y + pad
+  local dw = size - pad * 2
+  local dh = size - pad * 2
+  if side then
+    dy = y + size * 0.05
+    dh = size * 0.9
+  end
+  love.graphics.setColor(0.12, 0.12, 0.14, 0.98)
+  love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
+  love.graphics.setColor(0.35, 0.35, 0.40, 0.95)
+  love.graphics.setLineWidth(1.5 / zoom)
+  love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
+  love.graphics.setColor(0.55, 0.55, 0.60, 0.85)
+  love.graphics.setLineWidth(2 / zoom)
+  local barX = dx + dw * 0.5
+  love.graphics.line(barX, dy + 4, barX, dy + dh - 4)
+  love.graphics.line(dx + 4, dy + dh * 0.45, dx + dw - 4, dy + dh * 0.45)
+  love.graphics.circle("fill", barX + dw * 0.18, dy + dh * 0.45, 2.5)
 end
 
 local function drawBoulderAt(x, y, size, cracked, zoom, side)
@@ -957,10 +1323,24 @@ local function drawBoulderAt(x, y, size, cracked, zoom, side)
   end
 end
 
-function Grid:drawTopdown(zoom, camera, showGrid)
+function Grid:drawTopdown(zoom, camera, showGrid, filter)
   local sprites = getTileSprites()
   local width, height = self:worldBounds()
   local minCol, maxCol, minRow, maxRow = self:visibleDrawRange(camera)
+
+  local function include(col, row)
+    if not filter then
+      return true
+    end
+    local side = self:isSideView(col, row)
+    if filter == "topdown" then
+      return not side
+    end
+    if filter == "side" then
+      return side
+    end
+    return true
+  end
 
   local function isVisible(tile, padding)
     padding = padding or 0
@@ -970,8 +1350,11 @@ function Grid:drawTopdown(zoom, camera, showGrid)
       and tile.row <= maxRow + padding
   end
 
-  love.graphics.setColor(0.025, 0.05, 0.09)
-  love.graphics.rectangle("fill", 0, 0, width, height)
+  -- Skip full-canvas clear when compositing after another pass.
+  if filter ~= "side" then
+    love.graphics.setColor(0.025, 0.05, 0.09)
+    love.graphics.rectangle("fill", 0, 0, width, height)
+  end
 
   -- Side walls + half walls are wall-only: never paint brick under them.
   local function hidesGround(col, row)
@@ -1056,7 +1439,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   for row = minRow, maxRow do
     local runStart = nil
     for col = minCol, maxCol + 1 do
-      if col <= maxCol and self:hasGround(col, row) and not hidesGround(col, row) then
+      if col <= maxCol and self:hasGround(col, row) and not hidesGround(col, row) and include(col, row) then
         runStart = runStart or col
       elseif runStart then
         local x, y = self:tileOrigin(runStart, row)
@@ -1084,7 +1467,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 
   for _, ice in pairs(self.iceTiles) do
-    if isVisible(ice) and not getBehindWallAt(ice.col, ice.row) then
+    if isVisible(ice) and include(ice.col, ice.row) and not getBehindWallAt(ice.col, ice.row) then
       local x, y = self:tileOrigin(ice.col, ice.row)
       local quad, cellWidth, cellHeight = getTextureQuad(
         sprites.ice,
@@ -1111,7 +1494,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   for col = minCol, maxCol do
     for row = minRow, maxRow do
       local behind = getBehindWallAt(col, row)
-      if behind then
+      if behind and include(col, row) then
         local x, y = self:tileOrigin(col, row)
         drawFrontWallTopdown(behind, x, y)
         if not behind.half and not hidesGround(col, row) then
@@ -1134,11 +1517,11 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 
   for _, fire in pairs(self.fireTiles) do
-    if isVisible(fire, self.fireRadius) then
+    if isVisible(fire, self.fireRadius) and include(fire.col, fire.row) then
       love.graphics.setColor(0.65, 0.20, 0.06, 0.24)
       for row = fire.row - self.fireRadius, fire.row + self.fireRadius do
         for col = fire.col - self.fireRadius, fire.col + self.fireRadius do
-          if self:hasGround(col, row) then
+          if self:hasGround(col, row) and include(col, row) then
             local x, y = self:tileOrigin(col, row)
             love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
           end
@@ -1149,7 +1532,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
 
   love.graphics.setLineWidth(1 / zoom)
   for _, tile in pairs(self.waterTiles) do
-    if isVisible(tile) then
+    if isVisible(tile) and include(tile.col, tile.row) then
       local x, y = self:tileOrigin(tile.col, tile.row)
       love.graphics.setColor(0.10, 0.48, 0.72, 0.75)
       love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
@@ -1159,7 +1542,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 
   for _, snowflake in pairs(self.snowflakeTiles) do
-    if isVisible(snowflake) then
+    if isVisible(snowflake) and include(snowflake.col, snowflake.row) then
       local centerX, centerY = self:tileCenter(snowflake.col, snowflake.row)
       local targetSize = self.size * 0.82
       local scale = targetSize / math.max(
@@ -1181,15 +1564,36 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 
   for _, tea in pairs(self.teaTiles) do
-    if isVisible(tea) then
+    if isVisible(tea) and include(tea.col, tea.row) then
       local centerX, centerY = self:tileCenter(tea.col, tea.row)
       drawTeaCup(centerX, centerY, zoom, false)
     end
   end
 
+  for _, piece in pairs(self.puzzlePieceTiles) do
+    if isVisible(piece) and include(piece.col, piece.row) then
+      local centerX, centerY = self:tileCenter(piece.col, piece.row)
+      drawPuzzlePieceShape(centerX, centerY, self.size, zoom, 1)
+    end
+  end
+
+  for _, canvas in pairs(self.puzzleCanvasTiles) do
+    if isVisible(canvas) and include(canvas.col, canvas.row) then
+      local centerX, centerY = self:tileCenter(canvas.col, canvas.row)
+      drawPuzzleCanvasAt(centerX, centerY, self.size, zoom, canvas.slots, false)
+    end
+  end
+
+  for _, door in pairs(self.puzzleDoorTiles) do
+    if isVisible(door) and include(door.col, door.row) then
+      local x, y = self:tileOrigin(door.col, door.row)
+      drawPuzzleDoorAt(x, y, self.size, zoom, false)
+    end
+  end
+
   -- Front / half / cracked walls (half = slab only, no brick under/above).
   for _, wall in pairs(self.wallTiles) do
-    if isVisible(wall) and wall.texture == "front" and wall.depth ~= "behind" then
+    if isVisible(wall) and include(wall.col, wall.row) and wall.texture == "front" and wall.depth ~= "behind" then
       local x, y = self:tileOrigin(wall.col, wall.row)
       drawFrontWallTopdown(wall, x, y)
     end
@@ -1197,7 +1601,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
 
   -- Side walls = strip only, no brick under the open half.
   for _, wall in pairs(self.wallTiles) do
-    if isVisible(wall) and wall.texture == "side" then
+    if isVisible(wall) and include(wall.col, wall.row) and wall.texture == "side" then
       local x, y = self:tileOrigin(wall.col, wall.row)
 
       local stripW = self.size * 0.5
@@ -1260,13 +1664,13 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 
   for _, boulder in pairs(self.boulderTiles) do
-    if isVisible(boulder) then
+    if isVisible(boulder) and include(boulder.col, boulder.row) then
       local x, y = self:tileOrigin(boulder.col, boulder.row)
       drawBoulderAt(x, y, self.size, boulder.cracked, zoom, false)
     end
   end
 
-  if showGrid then
+  if showGrid and filter ~= "side" then
     love.graphics.setColor(0.13, 0.32, 0.47)
     for col = minCol - 1, maxCol do
       local x = col * self.size
@@ -1280,7 +1684,7 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 
   for _, fire in pairs(self.fireTiles) do
-    if isVisible(fire) then
+    if isVisible(fire) and include(fire.col, fire.row) then
       local centerX, centerY = self:tileCenter(fire.col, fire.row)
       local targetSize = self.size * 0.95
       local scale = targetSize / FIRE_FRAME_SIZE
@@ -1302,22 +1706,39 @@ function Grid:drawTopdown(zoom, camera, showGrid)
   end
 end
 
-function Grid:drawSide(zoom, camera, showGrid)
+function Grid:drawSide(zoom, camera, showGrid, filter)
   local sprites = getTileSprites()
   local minCol, maxCol, minRow, maxRow = self:visibleDrawRange(camera)
   local pitch, thick, faceH = Perspective.floorMetrics(self.size)
   local size = self.size
   local wallMax = Perspective.wallHeight(size, 1)
 
+  local function include(col, row)
+    if not filter then
+      return true
+    end
+    local side = self:isSideView(col, row)
+    if filter == "topdown" then
+      return not side
+    end
+    if filter == "side" then
+      return side
+    end
+    return true
+  end
+
   local originX = (minCol - 1) * size
   local originY = (minRow - 1) * size
   local spanW = (maxCol - minCol + 1) * size
   local spanH = (maxRow - minRow + 1) * size
-  love.graphics.setColor(0.025, 0.05, 0.09)
-  love.graphics.rectangle("fill", originX - size, originY - size, spanW + size * 2, spanH + size * 2)
+  -- Full clear only when this is the sole pass (no mixed top-down underlay).
+  if filter ~= "side" then
+    love.graphics.setColor(0.025, 0.05, 0.09)
+    love.graphics.rectangle("fill", originX - size, originY - size, spanW + size * 2, spanH + size * 2)
+  end
 
   local function cellFloorTop(col, row)
-    return Perspective.floorY(col, row, size)
+    return Perspective.floorY(col, row, size, "side")
   end
 
   local floorFaceQuadCache = {}
@@ -1484,20 +1905,20 @@ function Grid:drawSide(zoom, camera, showGrid)
     -- 1) Behind walls first so the floor sits in front of them.
     for col = minCol, maxCol do
       local wall = getBehindWallAt(col, row)
-      if wall then
+      if wall and include(col, row) then
         drawFrontWallElev(wall, col, row, true)
       end
     end
 
     -- 2) Floor strip — in side view, side/half walls still sit on brick.
     for col = minCol, maxCol do
-      if self:hasGround(col, row) then
+      if self:hasGround(col, row) and include(col, row) then
         drawFloorCell(col, row, self:isIceTile(col, row))
       end
     end
 
     for col = minCol, maxCol do
-      if self:hasGround(col, row) and self:isInFireZone(col, row) then
+      if self:hasGround(col, row) and include(col, row) and self:isInFireZone(col, row) then
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
         love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
@@ -1506,7 +1927,7 @@ function Grid:drawSide(zoom, camera, showGrid)
     end
 
     for col = minCol, maxCol do
-      if self:hasWater(col, row) then
+      if self:hasWater(col, row) and include(col, row) then
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
         love.graphics.setColor(0.12, 0.52, 0.78, 0.85)
@@ -1517,7 +1938,7 @@ function Grid:drawSide(zoom, camera, showGrid)
     -- 3) Front-layer front / half / cracked walls
     for col = minCol, maxCol do
       local wall = self.wallTiles[self:key(col, row)]
-      if wall and wall.texture == "front" and wall.depth ~= "behind" then
+      if wall and include(col, row) and wall.texture == "front" and wall.depth ~= "behind" then
         drawFrontWallElev(wall, col, row, false)
       end
     end
@@ -1525,7 +1946,7 @@ function Grid:drawSide(zoom, camera, showGrid)
     -- 4) Side walls (can sit over behind walls)
     for col = minCol, maxCol do
       local wall = self.wallTiles[self:key(col, row)]
-      if wall and wall.texture == "side" then
+      if wall and include(col, row) and wall.texture == "side" then
         drawSideWallElev(wall, col, row)
       end
     end
@@ -1533,6 +1954,7 @@ function Grid:drawSide(zoom, camera, showGrid)
     -- 5) Props seated on the floor top (sprite feet on brick).
     local FIRE_FOOT = 121 -- content bottom of fire-sheet frames (128 tall, 7px pad)
     for col = minCol, maxCol do
+      if include(col, row) then
       local key = self:key(col, row)
       local floorTop = cellFloorTop(col, row)
       local centerX = (col - 0.5) * size
@@ -1555,6 +1977,20 @@ function Grid:drawSide(zoom, camera, showGrid)
 
       if self.teaTiles[key] then
         drawTeaCup(centerX, floorTop, zoom, true)
+      end
+
+      if self.puzzlePieceTiles[key] then
+        drawPuzzlePieceShape(centerX, floorTop - size * 0.28, size, zoom, 1)
+      end
+
+      if self.puzzleCanvasTiles[key] then
+        drawPuzzleCanvasAt(centerX, floorTop, size, zoom, self.puzzleCanvasTiles[key].slots, true)
+      end
+
+      if self.puzzleDoorTiles[key] then
+        local x = (col - 1) * size
+        local y = floorTop - size
+        drawPuzzleDoorAt(x, y, size, zoom, true)
       end
 
       local boulder = self.boulderTiles[key]
@@ -1603,6 +2039,7 @@ function Grid:drawSide(zoom, camera, showGrid)
           FIRE_FRAME_SIZE / 2,
           FIRE_FOOT
         )
+      end
       end
     end
 

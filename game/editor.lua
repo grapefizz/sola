@@ -17,7 +17,7 @@ local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
-local LEGEND_H = 112
+local LEGEND_H = 120
 
 -- Single source of truth: add a tile tool here (+ applyTool / grid draw)
 -- and its left-panel icon is snapshotted automatically.
@@ -27,6 +27,9 @@ local TOOLS = {
   { name = "ice", label = "Ice Floor", icon = "tile" },
   { name = "snowflake", label = "Snowflake", icon = "tile" },
   { name = "tea", label = "Iced Tea Goal", icon = "tile" },
+  { name = "puzzle_piece", label = "Puzzle Piece", icon = "tile" },
+  { name = "puzzle_canvas", label = "Puzzle Canvas", icon = "tile" },
+  { name = "puzzle_door", label = "Puzzle Door", icon = "tile" },
   { name = "side_wall", label = "Side Wall", icon = "tile" },
   { name = "front_wall", label = "Front Wall", icon = "tile" },
   { name = "half_wall", label = "Half Wall", icon = "tile" },
@@ -34,7 +37,7 @@ local TOOLS = {
   { name = "boulder", label = "Boulder", icon = "tile" },
   { name = "cracked_boulder", label = "Cracked Boulder", icon = "tile" },
   { name = "erase", label = "Erase", icon = "erase" },
-  { name = "perspective", label = "Perspective", icon = "perspective" },
+  { name = "perspective", label = "Side Zone", icon = "perspective" },
   { name = "save", label = "Save", icon = "save" },
   { name = "load", label = "Load", icon = "load" },
 }
@@ -161,6 +164,54 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
       cx + 7 * zoom, cy + 13 * zoom,
       cx - 7 * zoom, cy + 13 * zoom
     )
+  elseif tool == "puzzle_piece" then
+    local s = size * 0.36
+    withAlpha(0.08, 0.08, 0.10, 0.98, alpha)
+    love.graphics.polygon(
+      "fill",
+      cx - s, cy - s * 0.55,
+      cx - s * 0.22, cy - s * 0.55,
+      cx - s * 0.22, cy - s,
+      cx + s * 0.22, cy - s,
+      cx + s * 0.22, cy - s * 0.55,
+      cx + s, cy - s * 0.55,
+      cx + s, cy + s * 0.15,
+      cx + s * 0.55, cy + s * 0.15,
+      cx + s * 0.55, cy + s * 0.55,
+      cx + s, cy + s * 0.55,
+      cx + s, cy + s,
+      cx - s, cy + s
+    )
+  elseif tool == "puzzle_canvas" then
+    local frame = size * 0.78
+    local fx = cx - frame * 0.5
+    local fy = cy - frame * 0.5
+    withAlpha(0.18, 0.16, 0.14, 0.95, alpha)
+    love.graphics.rectangle("fill", fx, fy, frame, frame, 3, 3)
+    withAlpha(0.55, 0.48, 0.38, 0.95, alpha)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", fx, fy, frame, frame, 3, 3)
+    local slotW = frame * 0.36
+    local slotH = frame * 0.58
+    local gap = frame * 0.08
+    withAlpha(0.10, 0.10, 0.12, 0.55, alpha)
+    love.graphics.rectangle("fill", fx + gap, fy + (frame - slotH) * 0.5, slotW, slotH, 2, 2)
+    love.graphics.rectangle(
+      "fill",
+      fx + frame - gap - slotW,
+      fy + (frame - slotH) * 0.5,
+      slotW,
+      slotH,
+      2,
+      2
+    )
+  elseif tool == "puzzle_door" then
+    withAlpha(0.12, 0.12, 0.14, 0.98, alpha)
+    love.graphics.rectangle("fill", x + 3, y + 3, size - 6, size - 6, 2, 2)
+    withAlpha(0.55, 0.55, 0.60, 0.9, alpha)
+    love.graphics.setLineWidth(2)
+    love.graphics.line(cx, y + 6, cx, y + size - 6)
+    love.graphics.line(x + 6, cy, x + size - 6, cy)
   elseif tool == "side_wall" then
     -- Strip only — no brick / ground under it.
     local stripW = size * 0.5
@@ -247,6 +298,11 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     love.graphics.setLineWidth(2.5)
     love.graphics.line(x + 6, y + 6, x + size - 6, y + size - 6)
     love.graphics.line(x + size - 6, y + 6, x + 6, y + size - 6)
+  elseif tool == "perspective" then
+    withAlpha(0.35, 0.72, 0.95, 0.45, alpha)
+    love.graphics.rectangle("fill", x + 2, y + 2, size - 4, size - 4, 3, 3)
+    withAlpha(0.78, 0.58, 0.42, 0.95, alpha)
+    love.graphics.rectangle("fill", x + size * 0.55, y + 4, size * 0.28, size - 8, 1, 1)
   end
 end
 
@@ -266,6 +322,9 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:removeIce(col, row)
     grid:removeSnowflake(col, row)
     grid:removeTea(col, row)
+    grid:removePuzzlePiece(col, row)
+    grid:removePuzzleCanvas(col, row)
+    grid:removePuzzleDoor(col, row)
     grid:removeWall(col, row)
     grid:removeBoulder(col, row)
   elseif tool == "fire" then
@@ -276,6 +335,12 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addSnowflake(col, row)
   elseif tool == "tea" then
     grid:addTea(col, row)
+  elseif tool == "puzzle_piece" then
+    grid:addPuzzlePiece(col, row)
+  elseif tool == "puzzle_canvas" then
+    grid:addPuzzleCanvas(col, row)
+  elseif tool == "puzzle_door" then
+    grid:addPuzzleDoor(col, row)
   elseif tool == "side_wall" then
     grid:addWall(col, row, "side", wallFacing)
   elseif tool == "front_wall" then
@@ -292,6 +357,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addBoulder(col, row)
   elseif tool == "cracked_boulder" then
     grid:addBoulder(col, row, { cracked = true })
+  elseif tool == "perspective" then
+    grid:addSideView(col, row)
   elseif tool == "erase" then
     grid:erase(col, row)
   end
@@ -750,7 +817,7 @@ function Editor:togglePerspective(grid, camera)
     camera.x, camera.y = grid:tileCenter(focusCol, focusRow)
   end
 
-  self:setStatus("Perspective: " .. Perspective.label() .. "  (V to toggle)")
+  self:setStatus("Preview: " .. Perspective.label() .. "  (V) · paint Side Zone for mixed levels")
   return mode
 end
 
@@ -760,6 +827,9 @@ function Editor:protectSpawn(grid)
   grid:removeIce(self.spawnCol, self.spawnRow)
   grid:removeSnowflake(self.spawnCol, self.spawnRow)
   grid:removeTea(self.spawnCol, self.spawnRow)
+  grid:removePuzzlePiece(self.spawnCol, self.spawnRow)
+  grid:removePuzzleCanvas(self.spawnCol, self.spawnRow)
+  grid:removePuzzleDoor(self.spawnCol, self.spawnRow)
   grid:removeWall(self.spawnCol, self.spawnRow)
   grid:removeBoulder(self.spawnCol, self.spawnRow)
 end
@@ -829,10 +899,13 @@ function Editor:toggleLoadDropdown()
 end
 
 function Editor:applyTool(tool, col, row, grid)
-  if not col or (col == self.spawnCol and row == self.spawnRow) then
-    if col then
-      self:setStatus("The spawn tile is protected")
-    end
+  if not col then
+    return
+  end
+
+  -- Side zones may cover spawn; other tools still protect it.
+  if col == self.spawnCol and row == self.spawnRow and tool ~= "perspective" then
+    self:setStatus("The spawn tile is protected")
     return
   end
 
@@ -845,6 +918,18 @@ function Editor:paintAt(x, y, button, grid, camera)
   end
 
   local col, row = self:getTileAt(x, y, grid, camera)
+  if not col then
+    return
+  end
+
+  -- Right-click with Side Zone only clears the zone (keeps tiles).
+  if button == 2 and self.tool == "perspective" then
+    if not grid:isInside(col, row) then
+      return
+    end
+    grid:removeSideView(col, row)
+    return
+  end
 
   self:applyTool(
     button == 2 and "erase" or self.tool,
@@ -970,7 +1055,8 @@ function Editor:mousepressed(x, y, button, grid, camera)
         self:toggleLoadDropdown()
       elseif entry.name == "perspective" then
         self.loadDropdownOpen = false
-        self:togglePerspective(grid, camera)
+        self.tool = "perspective"
+        self:setStatus("Side Zone · paint regions for side view + jump (V = preview mode)")
       else
         self.loadDropdownOpen = false
         self.tool = entry.name
@@ -1121,6 +1207,18 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "5" then
     self.tool = "tea"
     self.loadDropdownOpen = false
+  elseif key == "j" then
+    self.tool = "puzzle_piece"
+    self.loadDropdownOpen = false
+    self:setStatus("Puzzle piece · pick up one at a time, place on canvas")
+  elseif key == "p" then
+    self.tool = "puzzle_canvas"
+    self.loadDropdownOpen = false
+    self:setStatus("Puzzle canvas · 2 slots · completing opens doors / unlocks tea")
+  elseif key == "=" then
+    self.tool = "puzzle_door"
+    self.loadDropdownOpen = false
+    self:setStatus("Puzzle door · blocks until canvas is complete")
   elseif key == "6" then
     self.tool = "side_wall"
     self.loadDropdownOpen = false
@@ -1350,6 +1448,18 @@ function Editor:draw(grid, camera)
     camera
   )
 
+  -- Side-view zone overlay (always visible in editor).
+  love.graphics.setLineWidth(1)
+  for _, tile in pairs(grid.sideViewTiles) do
+    local ox, oy = grid:tileOrigin(tile.col, tile.row)
+    local x1, y1 = camera:worldToScreen(ox, oy)
+    local x2, y2 = camera:worldToScreen(ox + grid.size, oy + Perspective.rowPitch(grid.size))
+    love.graphics.setColor(0.30, 0.70, 1.0, 0.18)
+    love.graphics.rectangle("fill", x1, y1, x2 - x1, y2 - y1)
+    love.graphics.setColor(0.55, 0.85, 1.0, 0.55)
+    love.graphics.rectangle("line", x1 + 1, y1 + 1, x2 - x1 - 2, y2 - y1 - 2)
+  end
+
   if self.rectangle then
     local rectangle = self.rectangle
     local minCol = math.min(rectangle.startCol, rectangle.endCol)
@@ -1439,11 +1549,16 @@ function Editor:draw(grid, camera)
     local y = buttonY(index)
     local selected = self.tool == tool.name
       or (tool.name == "load" and self.loadDropdownOpen)
-      or (tool.name == "perspective" and Perspective.isSide())
 
     if selected then
       if tool.name == "snowflake" then
         love.graphics.setColor(0.20, 0.55, 0.90, 0.9)
+      elseif tool.name == "puzzle_piece" then
+        love.graphics.setColor(0.18, 0.18, 0.22, 0.95)
+      elseif tool.name == "puzzle_canvas" then
+        love.graphics.setColor(0.42, 0.36, 0.28, 0.95)
+      elseif tool.name == "puzzle_door" then
+        love.graphics.setColor(0.28, 0.28, 0.32, 0.95)
       elseif tool.name == "side_wall" then
         love.graphics.setColor(0.32, 0.48, 0.62, 0.9)
       elseif tool.name == "front_wall" then
@@ -1494,7 +1609,7 @@ function Editor:draw(grid, camera)
 
     local label = tool.label
     if tool.name == "perspective" then
-      label = Perspective.shortLabel() .. " View"
+      label = "Side Zone"
     elseif tool.name == "side_wall" then
       label = "Side (" .. (self.wallFacing == "right" and "Right" or "Left") .. ")"
     elseif isFrontWallTool(tool.name) then
@@ -1691,7 +1806,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  6 Side  ·  7 Front  ·  H Half Wall  ·  8 Cracked Wall  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  J Piece  ·  P Canvas  ·  = Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,

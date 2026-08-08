@@ -201,6 +201,9 @@ local function buildLevelPreview(name)
   snap:removeIce(SPAWN_COL, SPAWN_ROW)
   snap:removeSnowflake(SPAWN_COL, SPAWN_ROW)
   snap:removeTea(SPAWN_COL, SPAWN_ROW)
+  snap:removePuzzlePiece(SPAWN_COL, SPAWN_ROW)
+  snap:removePuzzleCanvas(SPAWN_COL, SPAWN_ROW)
+  snap:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
   snap:addWater(SPAWN_COL, SPAWN_ROW)
 
@@ -293,6 +296,9 @@ local function restartRun()
     grid:removeIce(SPAWN_COL, SPAWN_ROW)
     grid:removeSnowflake(SPAWN_COL, SPAWN_ROW)
     grid:removeTea(SPAWN_COL, SPAWN_ROW)
+    grid:removePuzzlePiece(SPAWN_COL, SPAWN_ROW)
+    grid:removePuzzleCanvas(SPAWN_COL, SPAWN_ROW)
+    grid:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
     grid:removeWall(SPAWN_COL, SPAWN_ROW)
   end
   player = Player.new(SPAWN_COL, SPAWN_ROW)
@@ -1498,7 +1504,7 @@ function love.draw()
       editor:draw(grid, camera)
     else
       player:draw(grid, camera)
-      player:drawHud()
+      player:drawHud(grid)
       if levelCompleteFlash > 0 then
         local a = math.min(1, levelCompleteFlash)
         love.graphics.setColor(0.04, 0.10, 0.18, 0.45 * a)
@@ -1665,6 +1671,11 @@ function love.keypressed(key)
     end
 
     if key == "v" then
+      -- Painted side zones own the view; V only previews levels with no zones.
+      if next(grid.sideViewTiles) then
+        playSfx(sfxToggle)
+        return
+      end
       local focusCol, focusRow = Perspective.worldToTile(camera.x, camera.y, grid.size)
       Perspective.toggle()
       if not grid:isInside(focusCol, focusRow) then

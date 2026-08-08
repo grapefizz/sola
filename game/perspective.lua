@@ -3,7 +3,7 @@
 
 local Perspective = {}
 
-Perspective.mode = "topdown" -- "topdown" | "side"
+Perspective.mode = "topdown" -- "topdown" | "side" (editor preview / levels with no zones)
 
 -- Side view: one grid cell = floor face + wall stack (they share the cell height).
 Perspective.FLOOR_FACE = 0.28 -- brick platform face (fraction of cell)
@@ -48,18 +48,20 @@ function Perspective.tileOrigin(col, row, tileSize)
   return (col - 1) * tileSize, (row - 1) * tileSize
 end
 
-function Perspective.tileCenter(col, row, tileSize)
+function Perspective.tileCenter(col, row, tileSize, mode)
+  mode = mode or Perspective.mode
   local x, y = Perspective.tileOrigin(col, row, tileSize)
-  if Perspective.mode == "side" then
+  if mode == "side" then
     -- Feet / prop base sit on the floor top.
-    return x + tileSize * 0.5, Perspective.floorY(col, row, tileSize)
+    return x + tileSize * 0.5, Perspective.floorY(col, row, tileSize, mode)
   end
   return x + tileSize * 0.5, y + tileSize * 0.5
 end
 
-function Perspective.floorY(col, row, tileSize)
+function Perspective.floorY(col, row, tileSize, mode)
+  mode = mode or Perspective.mode
   local _, y = Perspective.tileOrigin(col, row, tileSize)
-  if Perspective.mode == "side" then
+  if mode == "side" then
     return y + tileSize - tileSize * Perspective.FLOOR_FACE
   end
   return y + tileSize
