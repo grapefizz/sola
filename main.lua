@@ -1036,6 +1036,11 @@ function love.keypressed(key)
       end
     end
   elseif state == "play" then
+    if editor.active and editor.namingOpen then
+      editor:keypressed(key, grid)
+      return
+    end
+
     if key == "escape" then
       state = "menu"
       intro = 0
@@ -1064,6 +1069,12 @@ function love.keypressed(key)
     end
 
     player:keypressed(key, grid)
+  end
+end
+
+function love.textinput(text)
+  if state == "play" and editor and editor.active then
+    editor:textinput(text)
   end
 end
 
@@ -1113,7 +1124,10 @@ function love.mousepressed(x, y, button)
   end
 end
 
-function love.mousereleased(_, _, button)
+function love.mousereleased(x, y, button)
+  if state == "play" and editor and editor.active then
+    editor:mousereleased(x, y, button)
+  end
   if button == 1 then
     pressingCube = false
   end
