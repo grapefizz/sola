@@ -1419,7 +1419,13 @@ function love.draw()
     love.graphics.clear(0.04, 0.08, 0.16)
 
     camera:attach()
-    grid:draw(camera.zoom, camera)
+    if editor.active then
+      -- Show the tile grid only while editing.
+      grid:draw(camera.zoom, camera, true)
+    else
+      -- Normal gameplay: no editor grid.
+      grid:draw(camera.zoom, camera, false)
+    end
     camera:detach()
 
     if editor.active then

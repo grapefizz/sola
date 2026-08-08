@@ -603,7 +603,7 @@ end
 
 
 
-function Grid:draw(zoom, camera)
+function Grid:draw(zoom, camera, showGrid)
   local sprites = getTileSprites()
   local width = self.columns * self.size
   local height = self.rows * self.size
@@ -944,14 +944,17 @@ function Grid:draw(zoom, camera)
     end
   end
 
-  love.graphics.setColor(0.13, 0.32, 0.47)
-  for col = minCol - 1, maxCol do
-    local x = col * self.size
-    love.graphics.line(x, 0, x, height)
-  end
-  for row = minRow - 1, maxRow do
-    local y = row * self.size
-    love.graphics.line(0, y, width, y)
+  -- The tile grid is an editor overlay, not part of normal gameplay.
+  if showGrid then
+    love.graphics.setColor(0.13, 0.32, 0.47)
+    for col = minCol - 1, maxCol do
+      local x = col * self.size
+      love.graphics.line(x, 0, x, height)
+    end
+    for row = minRow - 1, maxRow do
+      local y = row * self.size
+      love.graphics.line(0, y, width, y)
+    end
   end
 
 
