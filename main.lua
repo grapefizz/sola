@@ -4,6 +4,10 @@
 ]]
 
 local g3d = require "g3d"
+local Camera = require "game.camera"
+local Editor = require "game.editor"
+local Grid = require "game.grid"
+local Player = require "game.player"
 
 local state = "menu" -- menu | credits | settings | play
 local elapsed = 0
@@ -69,12 +73,28 @@ local musicSrc
 local musicVol = 0.55
 local sfxVol = 0.8
 
-local player = {
-  x = 480,
-  y = 300,
-  radius = 22,
-  speed = 280,
-}
+-- gameplay from game/ (water trails, fire, editor) — modules untouched
+local SPAWN_COL, SPAWN_ROW = 10, 8
+local grid, player, camera, editor
+
+local function restartRun()
+  grid:clearWater()
+  grid:setGround(SPAWN_COL, SPAWN_ROW)
+  grid:removeFire(SPAWN_COL, SPAWN_ROW)
+  player = Player.new(SPAWN_COL, SPAWN_ROW)
+  local cameraX, cameraY = grid:tileCenter(player.col, player.row)
+  camera = Camera.new(cameraX, cameraY, 2)
+  grid:addWater(player.col, player.row)
+end
+
+local function startPlay()
+  grid = Grid.new(40, 20, 15)
+  editor = Editor.new(SPAWN_COL, SPAWN_ROW)
+  grid:addFire(13, 8)
+  editor:setActive(false)
+  restartRun()
+  love.window.setTitle("Ice Cube — Play")
+end
 
 local function clamp(v, a, b)
   return math.max(a, math.min(b, v))
@@ -431,14 +451,15 @@ local function activate(item)
   local id = item.id
   if id == "play" then
     state = "play"
-    local w, h = love.graphics.getDimensions()
-    player.x, player.y = w * 0.5, h * 0.55
+    startPlay()
   elseif id == "settings" then
     state = "settings"
     intro = 0
+    love.window.setTitle("Ice Cube")
   elseif id == "credits" then
     state = "credits"
     intro = 0
+    love.window.setTitle("Ice Cube")
   elseif id == "exit" then
     love.event.quit()
   end
@@ -535,18 +556,11 @@ function love.update(dt)
       menuSlide[i] = lerp(menuSlide[i], target, 1 - math.exp(-16 * dt))
     end
   elseif state == "play" then
-    local dx, dy = 0, 0
-    if love.keyboard.isDown("left", "a") then dx = dx - 1 end
-    if love.keyboard.isDown("right", "d") then dx = dx + 1 end
-    if love.keyboard.isDown("up", "w") then dy = dy - 1 end
-    if love.keyboard.isDown("down", "s") then dy = dy + 1 end
-    if dx ~= 0 or dy ~= 0 then
-      local len = math.sqrt(dx * dx + dy * dy)
-      player.x = player.x + dx / len * player.speed * dt
-      player.y = player.y + dy / len * player.speed * dt
+    if editor.active then
+      editor:update(dt, grid, camera)
+    else
+      player:update(dt, grid)
     end
-    player.x = clamp(player.x, player.radius, width - player.radius)
-    player.y = clamp(player.y, player.radius, height - player.radius)
   end
 end
 
@@ -919,29 +933,29 @@ local function drawSettings(width, height)
   drawSnow()
 end
 
-local function drawPlay(width, height)
-  drawAtmosphere(width, height)
-
-  local px, py = math.floor(player.x - 16), math.floor(player.y - 16)
-  love.graphics.setColor(0.55, 0.82, 0.95, 0.95)
-  love.graphics.rectangle("fill", px, py, 32, 32)
-  love.graphics.setColor(0.10, 0.22, 0.36, 1)
-  love.graphics.rectangle("fill", px, py, 32, 3)
-  love.graphics.rectangle("fill", px, py + 29, 32, 3)
-  love.graphics.rectangle("fill", px, py, 3, 32)
-  love.graphics.rectangle("fill", px + 29, py, 3, 32)
-
-  drawPanel(16, 12, 310, 34, 0.95)
-  love.graphics.setFont(fonts.small)
-  love.graphics.setColor(0.95, 0.98, 1.0, 1)
-  love.graphics.print("Move with arrows / WASD    Esc: menu", 28, 21)
-
-  drawSnow()
-end
-
 function love.draw()
   local width, height = love.graphics.getDimensions()
   love.graphics.setDepthMode("always", false)
+  love.graphics.setShader()
+
+  if state == "play" then
+    love.graphics.setBackgroundColor(0.04, 0.08, 0.16)
+    love.graphics.clear(0.04, 0.08, 0.16)
+
+    camera:attach()
+    grid:draw(camera.zoom)
+    camera:detach()
+
+    if editor.active then
+      editor:draw(grid, camera)
+    else
+      player:draw(grid, camera)
+      player:drawHud()
+      love.graphics.setColor(0.58, 0.75, 0.9)
+      love.graphics.print("E: level editor    Esc: menu", 18, 58)
+    end
+    return
+  end
 
   love.graphics.push()
   love.graphics.translate(shakeX, shakeY)
@@ -952,8 +966,6 @@ function love.draw()
     drawCredits(width, height)
   elseif state == "settings" then
     drawSettings(width, height)
-  else
-    drawPlay(width, height)
   end
 
   love.graphics.pop()
@@ -1017,12 +1029,42 @@ function love.keypressed(key)
     if key == "escape" then
       state = "menu"
       intro = 0
+      love.window.setTitle("Ice Cube")
       playSfx(sfxClick)
+      return
     end
+
+    if key == "e" then
+      editor:setActive(not editor.active)
+      grid:clearWater()
+      if not editor.active then
+        restartRun()
+      end
+      return
+    end
+
+    if editor.active then
+      editor:keypressed(key, grid)
+      return
+    end
+
+    if key == "r" then
+      restartRun()
+      return
+    end
+
+    player:keypressed(key, grid)
   end
 end
 
 function love.mousepressed(x, y, button)
+  if state == "play" then
+    if editor.active then
+      editor:mousepressed(x, y, button, grid, camera)
+    end
+    return
+  end
+
   if button ~= 1 then return end
   local width, height = love.graphics.getDimensions()
 
@@ -1080,5 +1122,11 @@ function love.mousemoved(x, y, dx, dy)
         changeSetting(item, clamp((x - sx) / sw, 0, 1), true)
       end
     end
+  end
+end
+
+function love.wheelmoved(_, y)
+  if state == "play" and editor.active then
+    editor:wheelmoved(y, grid, camera)
   end
 end
