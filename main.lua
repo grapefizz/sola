@@ -31,20 +31,12 @@ function love.load()
   love.graphics.setDefaultFilter("nearest", "nearest")
 end
 
-function Camera:follow(targetX, targetY, dt, smoothing)
-  smoothing = smoothing or 8 -- higher = snappier, lower = floatier
-  local t = 1 - math.exp(-smoothing * dt) -- frame-rate independent lerp
-  self.x = self.x + (targetX - self.x) * t
-  self.y = self.y + (targetY - self.y) * t
-end
-
 function love.update(dt)
   if editor.active then
     editor:update(dt, grid, camera)
   else
     player:update(dt, grid)
     local pX, pY = grid:tileCenter(player.col, player.row)
-    camera:follow(pX, pY, dt)
   end
 end
 
