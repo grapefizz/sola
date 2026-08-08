@@ -963,9 +963,6 @@ function love.draw()
       editor:draw(grid, camera)
     else
       player:draw(grid, camera)
-      player:drawHud()
-      love.graphics.setColor(0.58, 0.75, 0.9)
-      love.graphics.print("E: level editor    Esc: menu", 18, 58)
     end
     return
   end

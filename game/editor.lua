@@ -20,7 +20,7 @@ function Editor:setActive(active)
 end
 
 function Editor:isOverHud(x, y)
-  return x >= 10 and x <= 330 and y >= 70 and y <= 238
+  return x >= 10 and x <= 170 and y >= 10 and y <= 118
 end
 
 function Editor:getTileAt(x, y, grid, camera)
@@ -69,14 +69,14 @@ function Editor:mousepressed(x, y, button, grid, camera)
     return
   end
 
-  if button == 1 and x >= 24 and x <= 316 then
-    if y >= 112 and y <= 136 then
+  if button == 1 and x >= 18 and x <= 162 then
+    if y >= 18 and y <= 42 then
       self.tool = "ground"
       return
-    elseif y >= 140 and y <= 164 then
+    elseif y >= 46 and y <= 70 then
       self.tool = "fire"
       return
-    elseif y >= 168 and y <= 192 then
+    elseif y >= 74 and y <= 98 then
       self.tool = "erase"
       return
     end
@@ -180,33 +180,23 @@ function Editor:draw(grid, camera)
   )
 
   love.graphics.setColor(0.025, 0.05, 0.09, 0.94)
-  love.graphics.rectangle("fill", 10, 70, 320, 168, 6, 6)
-  love.graphics.setColor(0.92, 0.97, 1)
-  love.graphics.print("LEVEL EDITOR", 24, 82)
+  love.graphics.rectangle("fill", 10, 10, 160, 108, 6, 6)
 
   local tools = {
-    { key = "1", name = "ground", label = "Ground" },
-    { key = "2", name = "fire", label = "Fire" },
-    { key = "3", name = "erase", label = "Erase" },
+    { name = "ground", label = "Ground" },
+    { name = "fire", label = "Fire" },
+    { name = "erase", label = "Erase" },
   }
   for index, tool in ipairs(tools) do
-    local y = 112 + (index - 1) * 28
+    local y = 18 + (index - 1) * 28
     if self.tool == tool.name then
       love.graphics.setColor(0.18, 0.58, 0.86, 0.8)
     else
       love.graphics.setColor(0.10, 0.20, 0.31, 0.9)
     end
-    love.graphics.rectangle("fill", 24, y, 292, 24, 4, 4)
+    love.graphics.rectangle("fill", 18, y, 144, 24, 4, 4)
     love.graphics.setColor(0.92, 0.97, 1)
-    love.graphics.print(tool.key .. "  " .. tool.label, 34, y + 4)
-  end
-
-  love.graphics.setColor(0.58, 0.75, 0.9)
-  love.graphics.print("Drag to paint · Right-click erase", 24, 202)
-  love.graphics.print("WASD pan · Wheel zoom · E play", 24, 218)
-  love.graphics.print("S save · L load · C clear · F fill", 350, 18)
-  if self.status ~= "" then
-    love.graphics.print(self.status, 350, 38)
+    love.graphics.print(tool.label, 28, y + 4)
   end
 end
 
