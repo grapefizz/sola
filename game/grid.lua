@@ -1,6 +1,48 @@
 local Grid = {}
 Grid.__index = Grid
 
+local TEXTURE_GRID_SIZE = 1
+local tileSprites
+local groundQuadCache = {}
+local iceQuadCache = {}
+
+local function getTileSprites()
+  if tileSprites then
+    return tileSprites
+  end
+
+  tileSprites = {
+    ground = love.graphics.newImage("assets/floor.png"),
+    ice = love.graphics.newImage("assets/ice.png"),
+    snowflake = love.graphics.newImage("assets/snowflake.png"),
+  }
+  tileSprites.ground:setFilter("linear", "linear")
+  tileSprites.ice:setFilter("linear", "linear")
+  tileSprites.snowflake:setFilter("linear", "linear")
+  tileSprites.ground:setWrap("repeat", "repeat")
+  tileSprites.ice:setWrap("repeat", "repeat")
+  return tileSprites
+end
+
+local function getTextureQuad(image, cache, col, row, length)
+  local cellWidth = image:getWidth() / TEXTURE_GRID_SIZE
+  local cellHeight = image:getHeight() / TEXTURE_GRID_SIZE
+  local textureCol = (col - 1) % TEXTURE_GRID_SIZE
+  local textureRow = (row - 1) % TEXTURE_GRID_SIZE
+  local key = textureCol .. ":" .. textureRow .. ":" .. length
+
+  if not cache[key] then
+    cache[key] = love.graphics.newQuad(
+      textureCol * cellWidth,
+      textureRow * cellHeight,
+      length * cellWidth,
+      cellHeight,
+      image:getDimensions()
+    )
+  end
+  return cache[key], cellWidth, cellHeight
+end
+
 
 
 function Grid.new(size, columns, rows, fillGround)
@@ -491,6 +533,7 @@ end
 
 
 function Grid:draw(zoom, camera)
+  local sprites = getTileSprites()
   local width = self.columns * self.size
   local height = self.rows * self.size
   local minCol, maxCol = 1, self.columns
@@ -521,7 +564,6 @@ function Grid:draw(zoom, camera)
 
 
 
-  love.graphics.setColor(0.06, 0.16, 0.27)
   for row = minRow, maxRow do
     local runStart = nil
     for col = minCol, maxCol + 1 do
@@ -530,7 +572,24 @@ function Grid:draw(zoom, camera)
       elseif runStart then
         local x = (runStart - 1) * self.size
         local y = (row - 1) * self.size
-        love.graphics.rectangle("fill", x + 1, y + 1, (col - runStart) * self.size - 2, self.size - 2)
+        local runLength = col - runStart
+        local quad, cellWidth, cellHeight = getTextureQuad(
+          sprites.ground,
+          groundQuadCache,
+          runStart,
+          row,
+          runLength
+        )
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(
+          sprites.ground,
+          quad,
+          x,
+          y,
+          0,
+          self.size / cellWidth,
+          self.size / cellHeight
+        )
         runStart = nil
       end
     end
@@ -538,16 +597,25 @@ function Grid:draw(zoom, camera)
 
   for _, ice in pairs(self.iceTiles) do
     if isVisible(ice) then
-    local x = (ice.col - 1) * self.size
-    local y = (ice.row - 1) * self.size
-    love.graphics.setColor(0.55, 0.82, 0.98, 0.55)
-    love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
-    love.graphics.setColor(0.85, 0.95, 1.0, 0.7)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.line(x + 8, y + 10, x + self.size - 14, y + self.size - 12)
-    love.graphics.line(x + 12, y + 8, x + self.size - 10, y + self.size - 14)
-    love.graphics.setColor(1, 1, 1, 0.45)
-    love.graphics.circle("fill", x + 11, y + 11, 2)
+      local x = (ice.col - 1) * self.size
+      local y = (ice.row - 1) * self.size
+      local quad, cellWidth, cellHeight = getTextureQuad(
+        sprites.ice,
+        iceQuadCache,
+        ice.col,
+        ice.row,
+        1
+      )
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.ice,
+        quad,
+        x,
+        y,
+        0,
+        self.size / cellWidth,
+        self.size / cellHeight
+      )
     end
   end
 
@@ -566,15 +634,6 @@ function Grid:draw(zoom, camera)
     end
   end
 
-  for _, snowflake in pairs(self.snowflakeTiles) do
-    if isVisible(snowflake) then
-    local x = (snowflake.col - 1) * self.size
-    local y = (snowflake.row - 1) * self.size
-    love.graphics.setColor(0.08, 0.24, 0.42, 0.30)
-    love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
-    end
-  end
-
   love.graphics.setLineWidth(1 / zoom)
   for _, tile in pairs(self.waterTiles) do
     if isVisible(tile) then
@@ -589,25 +648,23 @@ function Grid:draw(zoom, camera)
 
   for _, snowflake in pairs(self.snowflakeTiles) do
     if isVisible(snowflake) then
-    local centerX, centerY = self:tileCenter(snowflake.col, snowflake.row)
-    local halfWidth = self.size * 0.35
-    local halfHeight = self.size * 0.25
-    love.graphics.setColor(0.12, 0.48, 0.90, 0.9)
-    love.graphics.polygon(
-      "fill",
-      centerX, centerY - halfHeight,
-      centerX + halfWidth, centerY,
-      centerX, centerY + halfHeight,
-      centerX - halfWidth, centerY
-    )
-    love.graphics.setColor(0.55, 0.85, 1.0, 0.95)
-    love.graphics.polygon(
-      "fill",
-      centerX, centerY - halfHeight * 0.5,
-      centerX + halfWidth * 0.5, centerY,
-      centerX, centerY + halfHeight * 0.5,
-      centerX - halfWidth * 0.5, centerY
-    )
+      local centerX, centerY = self:tileCenter(snowflake.col, snowflake.row)
+      local targetSize = self.size * 0.82
+      local scale = targetSize / math.max(
+        sprites.snowflake:getWidth(),
+        sprites.snowflake:getHeight()
+      )
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.snowflake,
+        centerX,
+        centerY,
+        0,
+        scale,
+        scale,
+        sprites.snowflake:getWidth() / 2,
+        sprites.snowflake:getHeight() / 2
+      )
     end
   end
 
