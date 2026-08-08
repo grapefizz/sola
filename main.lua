@@ -232,12 +232,7 @@ local function buildLevelPreview(name)
   love.graphics.clear(0.04, 0.08, 0.16, 1)
 
   love.graphics.push()
-
-  love.graphics.translate(
-    pw * 0.5 - centerWorldX * scale,
-    ph * 0.5 - centerWorldY * scale
-  )
-
+  love.graphics.translate(ox, oy)
   love.graphics.scale(scale, scale)
 
   snap:draw(1, nil, false)
