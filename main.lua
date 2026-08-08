@@ -14,14 +14,33 @@ local grid = {
 
 local camera = {
   zoom = 2,
-  x = grid.columns * grid.size / 2,
-  y = grid.rows * grid.size / 2,
+  x = (player.col - 0.5) * grid.size,
+  y = (player.row - 0.5) * grid.size,
+}
+
+local movement = {
+  active = false,
+  elapsed = 0,
+  duration = 0.28,
+  fromCol = player.col,
+  fromRow = player.row,
+  toCol = player.col,
+  toRow = player.row,
 }
 
 function love.load()
   love.window.setTitle("Ice Cube")
   love.graphics.setBackgroundColor(0.04, 0.08, 0.16)
   love.graphics.setDefaultFilter("nearest", "nearest")
+end
+
+function love.update(dt)
+  if movement.active then
+    movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
+    if movement.elapsed >= movement.duration then
+      movement.active = false
+    end
+  end
 end
 
 function love.draw()
@@ -48,22 +67,56 @@ function love.draw()
     love.graphics.line(0, y, worldWidth, y)
   end
 
-  local x = (player.col - 1) * grid.size
-  local y = (player.row - 1) * grid.size
-  local cubeSize = player.startSize * (player.movesRemaining / player.maxMoves)
-
-  if cubeSize > 0 then
-    local cubeX = x + (grid.size - cubeSize) / 2
-    local cubeY = y + (grid.size - cubeSize) / 2
-    local cornerRadius = math.min(5, cubeSize / 4)
-
-    love.graphics.setColor(0.66, 0.92, 1)
-    love.graphics.rectangle("fill", cubeX, cubeY, cubeSize, cubeSize, cornerRadius, cornerRadius)
-    love.graphics.setColor(0.18, 0.58, 0.86)
-    love.graphics.rectangle("line", cubeX, cubeY, cubeSize, cubeSize, cornerRadius, cornerRadius)
+  local moveProgress = 1
+  if movement.active then
+    moveProgress = movement.elapsed / movement.duration
   end
+  local easedProgress = moveProgress * moveProgress * (3 - 2 * moveProgress)
+  local displayedMoves = player.movesRemaining
+  if movement.active then
+    displayedMoves = displayedMoves + (1 - easedProgress)
+  end
+  local cubeSize = player.startSize * (displayedMoves / player.maxMoves)
 
   love.graphics.pop()
+
+  if cubeSize > 0 then
+    local displayCol = player.col
+    local displayRow = player.row
+    if movement.active then
+      displayCol = movement.fromCol + (movement.toCol - movement.fromCol) * easedProgress
+      displayRow = movement.fromRow + (movement.toRow - movement.fromRow) * easedProgress
+    end
+    local worldX = (displayCol - 0.5) * grid.size
+    local worldY = (displayRow - 0.5) * grid.size
+    local cubeX = screenWidth / 2 + (worldX - camera.x) * camera.zoom
+    local cubeY = screenHeight / 2 + (worldY - camera.y) * camera.zoom
+    local screenCubeSize = cubeSize * camera.zoom
+    local halfSize = screenCubeSize / 2
+    local cornerRadius = math.min(8, screenCubeSize / 5)
+
+    love.graphics.setColor(0.66, 0.92, 1)
+    love.graphics.rectangle(
+      "fill",
+      cubeX - halfSize,
+      cubeY - halfSize,
+      screenCubeSize,
+      screenCubeSize,
+      cornerRadius,
+      cornerRadius
+    )
+    love.graphics.setColor(0.18, 0.58, 0.86)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle(
+      "line",
+      cubeX - halfSize,
+      cubeY - halfSize,
+      screenCubeSize,
+      screenCubeSize,
+      cornerRadius,
+      cornerRadius
+    )
+  end
 
   love.graphics.setColor(0.92, 0.97, 1)
   love.graphics.print("Ice Cube", 18, 14)
@@ -85,6 +138,10 @@ function love.keypressed(key)
     return
   end
 
+  if movement.active then
+    return
+  end
+
   local col, row = player.col, player.row
 
   if key == "left" or key == "a" then
@@ -101,6 +158,12 @@ function love.keypressed(key)
   local nextRow = math.max(1, math.min(grid.rows, row))
 
   if nextCol ~= player.col or nextRow ~= player.row then
+    movement.active = true
+    movement.elapsed = 0
+    movement.fromCol = player.col
+    movement.fromRow = player.row
+    movement.toCol = nextCol
+    movement.toRow = nextRow
     player.col = nextCol
     player.row = nextRow
     player.movesRemaining = player.movesRemaining - 1
