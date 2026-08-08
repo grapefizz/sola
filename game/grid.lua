@@ -57,6 +57,7 @@ function Grid.new(size, columns, rows, fillGround)
     snowflakeTiles = {},
     teaTiles = {},
     wallTiles = {},
+    boulderTiles = {},
     fireRadius = 1,
   }, Grid)
 
@@ -122,6 +123,7 @@ function Grid:erase(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
 end
 
 
@@ -134,6 +136,7 @@ function Grid:clear()
   self.snowflakeTiles = {}
   self.teaTiles = {}
   self.wallTiles = {}
+  self.boulderTiles = {}
 end
 
 
@@ -149,7 +152,7 @@ function Grid:addWater(col, row)
     and not self:isInFireZone(col, row)
     and not self:isIceTile(col, row)
     and not self:isTeaTile(col, row)
-    and not self:isWallTile(col, row)
+    and not self:isBlocking(col, row)
   then
     self.waterTiles[self:key(col, row)] = { col = col, row = row }
   end
@@ -174,6 +177,7 @@ function Grid:addFire(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
   self.fireTiles[key] = { col = col, row = row }
 end
 
@@ -200,6 +204,7 @@ function Grid:addIce(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.wallTiles[key] = nil
+  -- Keep boulder so ice can sit under it.
   self.iceTiles[key] = { col = col, row = row }
 end
 
@@ -234,6 +239,7 @@ function Grid:addSnowflake(col, row)
   self.iceTiles[key] = nil
   self.teaTiles[key] = nil
   self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
   self.snowflakeTiles[key] = { col = col, row = row }
 end
 
@@ -269,6 +275,7 @@ function Grid:addTea(col, row)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
   self.teaTiles[key] = { col = col, row = row }
 end
 
@@ -299,6 +306,7 @@ function Grid:addWall(col, row, texture, lean, options)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
+  self.boulderTiles[key] = nil
   self.wallTiles[key] = {
     col = col,
     row = row,
@@ -330,6 +338,33 @@ end
 function Grid:isCrackedWall(col, row)
   local wall = self.wallTiles[self:key(col, row)]
   return wall ~= nil and wall.cracked == true
+end
+
+function Grid:addBoulder(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.fireTiles[key] = nil
+  -- Keep ice so the boulder can sit on top of it.
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = { col = col, row = row }
+end
+
+function Grid:removeBoulder(col, row)
+  self.boulderTiles[self:key(col, row)] = nil
+end
+
+function Grid:isBoulderTile(col, row)
+  return self.boulderTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:isBlocking(col, row)
+  return self:isWallTile(col, row) or self:isBoulderTile(col, row)
 end
 
 function Grid:getWallTexture(col, row)
@@ -460,10 +495,14 @@ function Grid:serialize()
         cells[col] = "F"
       elseif self:isTeaTile(col, row) then
         cells[col] = "T"
+      elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
+        cells[col] = "O"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
         cells[col] = "S"
+      elseif self:isBoulderTile(col, row) then
+        cells[col] = "B"
       elseif self:isWallTile(col, row) then
         local wall = self.wallTiles[self:key(col, row)]
         local lean = wall.lean or "left"
@@ -504,10 +543,15 @@ function Grid:load(serialized)
         self:addFire(col, row)
       elseif cell == "I" then
         self:addIce(col, row)
+      elseif cell == "O" then
+        self:addIce(col, row)
+        self:addBoulder(col, row)
       elseif cell == "S" then
         self:addSnowflake(col, row)
       elseif cell == "T" then
         self:addTea(col, row)
+      elseif cell == "B" then
+        self:addBoulder(col, row)
       elseif cell == "W" then
         self:addWall(col, row, "front", nil, { silent = true })
       elseif cell == "X" then
@@ -832,6 +876,23 @@ function Grid:draw(zoom, camera)
           )
         end
       end
+    end
+  end
+
+  for _, boulder in pairs(self.boulderTiles) do
+    if isVisible(boulder) then
+      local pad = self.size * 0.12
+      local x = (boulder.col - 1) * self.size + pad
+      local y = (boulder.row - 1) * self.size + pad
+      local size = self.size - pad * 2
+      love.graphics.setColor(0.42, 0.40, 0.38, 0.98)
+      love.graphics.rectangle("fill", x, y, size, size, 5, 5)
+      love.graphics.setColor(0.62, 0.60, 0.56, 0.9)
+      love.graphics.setLineWidth(1.5 / zoom)
+      love.graphics.rectangle("line", x, y, size, size, 5, 5)
+      love.graphics.setColor(0.28, 0.26, 0.24, 0.55)
+      love.graphics.line(x + size * 0.28, y + size * 0.22, x + size * 0.55, y + size * 0.7)
+      love.graphics.line(x + size * 0.6, y + size * 0.3, x + size * 0.78, y + size * 0.62)
     end
   end
 
