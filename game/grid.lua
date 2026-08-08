@@ -2,6 +2,9 @@ local Grid = {}
 Grid.__index = Grid
 
 local TEXTURE_GRID_SIZE = 1
+local FIRE_FRAME_SIZE = 128
+local FIRE_FRAME_COUNT = 9
+local FIRE_FRAME_DURATION = 1 / 12
 local tileSprites
 local groundQuadCache = {}
 local iceQuadCache = {}
@@ -15,10 +18,22 @@ local function getTileSprites()
     ground = love.graphics.newImage("assets/floor.png"),
     ice = love.graphics.newImage("assets/ice.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
+    fire = love.graphics.newImage("assets/fire-sheet.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
   tileSprites.snowflake:setFilter("linear", "linear")
+  tileSprites.fire:setFilter("linear", "linear")
+  tileSprites.fireFrames = {}
+  for index = 1, FIRE_FRAME_COUNT do
+    tileSprites.fireFrames[index] = love.graphics.newQuad(
+      (index - 1) * FIRE_FRAME_SIZE,
+      0,
+      FIRE_FRAME_SIZE,
+      FIRE_FRAME_SIZE,
+      tileSprites.fire:getDimensions()
+    )
+  end
   tileSprites.ground:setWrap("repeat", "repeat")
   tileSprites.ice:setWrap("repeat", "repeat")
   return tileSprites
@@ -603,7 +618,7 @@ end
 
 
 
-function Grid:draw(zoom, camera)
+function Grid:draw(zoom, camera, showGrid)
   local sprites = getTileSprites()
   local width = self.columns * self.size
   local height = self.rows * self.size
@@ -944,14 +959,17 @@ function Grid:draw(zoom, camera)
     end
   end
 
-  love.graphics.setColor(0.13, 0.32, 0.47)
-  for col = minCol - 1, maxCol do
-    local x = col * self.size
-    love.graphics.line(x, 0, x, height)
-  end
-  for row = minRow - 1, maxRow do
-    local y = row * self.size
-    love.graphics.line(0, y, width, y)
+  -- The tile grid is an editor overlay, not part of normal gameplay.
+  if showGrid then
+    love.graphics.setColor(0.13, 0.32, 0.47)
+    for col = minCol - 1, maxCol do
+      local x = col * self.size
+      love.graphics.line(x, 0, x, height)
+    end
+    for row = minRow - 1, maxRow do
+      local y = row * self.size
+      love.graphics.line(0, y, width, y)
+    end
   end
 
 
@@ -959,6 +977,7 @@ function Grid:draw(zoom, camera)
   for _, fire in pairs(self.fireTiles) do
     if isVisible(fire) then
       local centerX, centerY = self:tileCenter(fire.col, fire.row)
+<<<<<<< HEAD
       local s = self.size
 
       -- logs
@@ -1006,6 +1025,23 @@ function Grid:draw(zoom, camera)
         centerX, centerY - s * 0.10,
         centerX + s * 0.05, centerY + s * 0.06,
         centerX - s * 0.05, centerY + s * 0.06
+=======
+      local targetSize = self.size * 0.95
+      local scale = targetSize / FIRE_FRAME_SIZE
+      local time = (love.timer and love.timer.getTime()) or 0
+      local frameIndex = math.floor(time / FIRE_FRAME_DURATION) % FIRE_FRAME_COUNT + 1
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.fire,
+        sprites.fireFrames[frameIndex],
+        centerX,
+        centerY,
+        0,
+        scale,
+        scale,
+        FIRE_FRAME_SIZE / 2,
+        FIRE_FRAME_SIZE / 2
+>>>>>>> 411f64875e4f8b7c72008dfd27892503b5f28fb4
       )
     end
   end

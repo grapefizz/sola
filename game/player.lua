@@ -5,6 +5,49 @@ local MOVE_DURATION = 0.14
 local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 -- 25% faster on ice
 -- Cracked walls break when approaching at least this much faster than a normal step.
 local SMASH_SPEED_FACTOR = 1.05
+local PLAYER_FRAME_SIZE = 128
+local PLAYER_FRAME_COUNT = 18
+local PLAYER_FRAME_DURATION = 1 / 12
+local playerAnimation
+
+local function getPlayerAnimation()
+  if not playerAnimation then
+    local image = love.graphics.newImage("assets/player-sheet.png")
+    image:setFilter("linear", "linear")
+    local frames = {}
+    for index = 1, PLAYER_FRAME_COUNT do
+      frames[index] = love.graphics.newQuad(
+        (index - 1) * PLAYER_FRAME_SIZE,
+        0,
+        PLAYER_FRAME_SIZE,
+        PLAYER_FRAME_SIZE,
+        image:getDimensions()
+      )
+    end
+    playerAnimation = { image = image, frames = frames }
+  end
+  return playerAnimation
+end
+
+function Player.drawSprite(x, y, size, time)
+  local animation = getPlayerAnimation()
+  time = time or ((love.timer and love.timer.getTime()) or 0)
+  local frameIndex = math.floor(time / PLAYER_FRAME_DURATION) % PLAYER_FRAME_COUNT + 1
+  local scale = size / PLAYER_FRAME_SIZE
+
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(
+    animation.image,
+    animation.frames[frameIndex],
+    x,
+    y,
+    0,
+    scale,
+    scale,
+    PLAYER_FRAME_SIZE / 2,
+    PLAYER_FRAME_SIZE / 2
+  )
+end
 
 local function directionFromKey(key)
   if key == "left" or key == "a" then
@@ -282,31 +325,7 @@ function Player:draw(grid, camera)
   local worldX, worldY = grid:tileCenter(col, row)
   local x, y = camera:worldToScreen(worldX, worldY)
   local screenSize = size * camera.zoom
-  local halfSize = screenSize / 2
-  local cornerRadius = math.min(8, screenSize / 5)
-
-
-  love.graphics.setColor(0.66, 0.92, 1)
-  love.graphics.rectangle(
-    "fill",
-    x - halfSize,
-    y - halfSize,
-    screenSize,
-    screenSize,
-    cornerRadius,
-    cornerRadius
-  )
-  love.graphics.setColor(0.18, 0.58, 0.86)
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle(
-    "line",
-    x - halfSize,
-    y - halfSize,
-    screenSize,
-    screenSize,
-    cornerRadius,
-    cornerRadius
-  )
+  Player.drawSprite(x, y, screenSize)
 end
 
 

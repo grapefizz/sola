@@ -221,14 +221,10 @@ local function buildLevelPreview(name)
   love.graphics.scale(scale, scale)
   snap:draw(1)
 
-  -- spawn ice cube (matches in-game player look)
+  -- Spawn ice cube sprite (matches the in-game player).
   local cx, cy = snap:tileCenter(SPAWN_COL, SPAWN_ROW)
   local size = 26
-  love.graphics.setColor(0.66, 0.92, 1)
-  love.graphics.rectangle("fill", cx - size * 0.5, cy - size * 0.5, size, size, 6, 6)
-  love.graphics.setColor(0.18, 0.58, 0.86)
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", cx - size * 0.5, cy - size * 0.5, size, size, 6, 6)
+  Player.drawSprite(cx, cy, size, 0)
   love.graphics.pop()
 
   love.graphics.setCanvas(prevCanvas)
@@ -1419,7 +1415,13 @@ function love.draw()
     love.graphics.clear(0.04, 0.08, 0.16)
 
     camera:attach()
-    grid:draw(camera.zoom, camera)
+    if editor.active then
+      -- Show the tile grid only while editing.
+      grid:draw(camera.zoom, camera, true)
+    else
+      -- Normal gameplay: no editor grid.
+      grid:draw(camera.zoom, camera, false)
+    end
     camera:detach()
 
     if editor.active then
