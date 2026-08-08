@@ -1,6 +1,8 @@
 local Grid = {}
 Grid.__index = Grid
 
+
+
 function Grid.new(size, columns, rows, fillGround)
   local self = setmetatable({
     size = size,
@@ -14,6 +16,8 @@ function Grid.new(size, columns, rows, fillGround)
     fireRadius = 1,
   }, Grid)
 
+
+
   if fillGround ~= false then
     for row = 1, rows do
       for col = 1, columns do
@@ -24,22 +28,32 @@ function Grid.new(size, columns, rows, fillGround)
   return self
 end
 
+
+
 function Grid:key(col, row)
   return col .. "," .. row
 end
 
+
+
 function Grid:isInside(col, row)
   return col >= 1 and col <= self.columns and row >= 1 and row <= self.rows
 end
+
+
 
 function Grid:clamp(col, row)
   return math.max(1, math.min(self.columns, col)),
     math.max(1, math.min(self.rows, row))
 end
 
+
+
 function Grid:tileCenter(col, row)
   return (col - 0.5) * self.size, (row - 0.5) * self.size
 end
+
+
 
 function Grid:setGround(col, row)
   if self:isInside(col, row) then
@@ -47,9 +61,13 @@ function Grid:setGround(col, row)
   end
 end
 
+
+
 function Grid:hasGround(col, row)
   return self.groundTiles[self:key(col, row)] ~= nil
 end
+
+
 
 function Grid:erase(col, row)
   local key = self:key(col, row)
@@ -60,6 +78,8 @@ function Grid:erase(col, row)
   self.snowflakeTiles[key] = nil
 end
 
+
+
 function Grid:clear()
   self.groundTiles = {}
   self.waterTiles = {}
@@ -68,9 +88,13 @@ function Grid:clear()
   self.snowflakeTiles = {}
 end
 
+
+
 function Grid:clearWater()
   self.waterTiles = {}
 end
+
+
 
 function Grid:addWater(col, row)
   if self:hasGround(col, row)
@@ -81,9 +105,13 @@ function Grid:addWater(col, row)
   end
 end
 
+
+
 function Grid:hasWater(col, row)
   return self.waterTiles[self:key(col, row)] ~= nil
 end
+
+
 
 function Grid:addFire(col, row)
   if not self:isInside(col, row) then
@@ -97,9 +125,13 @@ function Grid:addFire(col, row)
   self.fireTiles[key] = { col = col, row = row }
 end
 
+
+
 function Grid:removeFire(col, row)
   self.fireTiles[self:key(col, row)] = nil
 end
+
+
 
 function Grid:isFireTile(col, row)
   return self.fireTiles[self:key(col, row)] ~= nil
@@ -183,6 +215,8 @@ function Grid:getMoveCost(col, row)
   return self:hasWater(col, row) and 0 or 1
 end
 
+
+
 function Grid:serialize()
   local lines = {}
   for row = 1, self.rows do
@@ -204,6 +238,8 @@ function Grid:serialize()
   end
   return table.concat(lines, "\n")
 end
+
+
 
 function Grid:load(serialized)
   self:clear()
@@ -228,12 +264,18 @@ function Grid:load(serialized)
   end
 end
 
+
+
 function Grid:draw(zoom)
   local width = self.columns * self.size
   local height = self.rows * self.size
 
+
+
   love.graphics.setColor(0.025, 0.05, 0.09)
   love.graphics.rectangle("fill", 0, 0, width, height)
+
+
 
   for _, tile in pairs(self.groundTiles) do
     local x = (tile.col - 1) * self.size
@@ -317,6 +359,8 @@ function Grid:draw(zoom)
     love.graphics.line(0, y, width, y)
   end
 
+
+
   for _, fire in pairs(self.fireTiles) do
     local centerX, centerY = self:tileCenter(fire.col, fire.row)
     love.graphics.setColor(0.95, 0.24, 0.04)
@@ -336,4 +380,7 @@ function Grid:draw(zoom)
   end
 end
 
+
+
 return Grid
+

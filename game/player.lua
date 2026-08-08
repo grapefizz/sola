@@ -127,6 +127,7 @@ function Player:update(dt, grid)
     return
   end
 
+
   movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
   if movement.elapsed >= movement.duration then
     grid:addWater(movement.toCol, movement.toRow)
@@ -142,6 +143,7 @@ function Player:update(dt, grid)
     end
   end
 end
+
 
 function Player:keypressed(key, grid)
   if self.dead then
@@ -179,12 +181,14 @@ function Player:keypressed(key, grid)
   end
 end
 
+
 function Player:getDrawState()
   local movement = self.movement
   local progress = 1
   if movement.active then
     progress = movement.elapsed / movement.duration
   end
+
 
   local easedProgress = progress * progress * (3 - 2 * progress)
   local displayedMoves = self.movesRemaining
@@ -195,8 +199,10 @@ function Player:getDrawState()
     row = movement.fromRow + (movement.toRow - movement.fromRow) * easedProgress
   end
 
+
   return col, row, self.startSize * (displayedMoves / self.maxMoves)
 end
+
 
 function Player:draw(grid, camera)
   local col, row, size = self:getDrawState()
@@ -204,11 +210,13 @@ function Player:draw(grid, camera)
     return
   end
 
+
   local worldX, worldY = grid:tileCenter(col, row)
   local x, y = camera:worldToScreen(worldX, worldY)
   local screenSize = size * camera.zoom
   local halfSize = screenSize / 2
   local cornerRadius = math.min(8, screenSize / 5)
+
 
   love.graphics.setColor(0.66, 0.92, 1)
   love.graphics.rectangle(
@@ -233,6 +241,7 @@ function Player:draw(grid, camera)
   )
 end
 
+
 function Player:drawHud()
   love.graphics.setColor(0.92, 0.97, 1)
   love.graphics.print("Ice Cube", 18, 14)
@@ -245,5 +254,6 @@ function Player:drawHud()
     love.graphics.print("The ice cube has melted!", 18, 38)
   end
 end
+
 
 return Player
