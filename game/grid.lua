@@ -1377,7 +1377,7 @@ function Grid:drawSide(zoom, camera, showGrid)
     local wallH = Perspective.wallHeight(size, fill)
     local floorTop = cellFloorTop(col, row)
     local wallY = floorTop - wallH
-    local depth = size * (behind and 0.12 or 0.22)
+    local depth = size * (behind and 0.12 or 0.18)
     local shade = behind and 0.78 or 1
     local inset = behind and math.max(3, size * 0.10) or 0
     x = x + inset
@@ -1448,6 +1448,7 @@ function Grid:drawSide(zoom, camera, showGrid)
     return nil
   end
 
+  -- Thin edge-on side walls (same height as front walls, not the same width).
   local function drawSideWallElev(wall, col, row)
     local x, y = self:tileOrigin(col, row)
     local lean = wall.lean or self:getWallLean(col, row)
@@ -1488,18 +1489,10 @@ function Grid:drawSide(zoom, camera, showGrid)
       end
     end
 
-    -- 2) Floor strip (skip side / half wall cells — those stay wall-only).
+    -- 2) Floor strip — in side view, side/half walls still sit on brick.
     for col = minCol, maxCol do
       if self:hasGround(col, row) then
-        local wall = self.wallTiles[self:key(col, row)]
-        local skipFloor = wall and (
-          wall.texture == "side"
-          or wall.half
-          or (wall.under and wall.under.half)
-        )
-        if not skipFloor then
-          drawFloorCell(col, row, self:isIceTile(col, row))
-        end
+        drawFloorCell(col, row, self:isIceTile(col, row))
       end
     end
 
@@ -1619,12 +1612,17 @@ function Grid:drawSide(zoom, camera, showGrid)
       local x1 = maxCol * size
       local y = (row - 1) * size
       love.graphics.setLineWidth(1 / zoom)
+      -- Cell bounds = floor face + wall stack.
       love.graphics.line(x0, y, x1, y)
       love.graphics.line(x0, y + size, x1, y + size)
       for col = minCol - 1, maxCol do
         local x = col * size
         love.graphics.line(x, y, x, y + size)
       end
+      -- Floor / wall split inside each cell.
+      local floorLine = y + size - faceH
+      love.graphics.setColor(0.35, 0.70, 0.90, 0.35)
+      love.graphics.line(x0, floorLine, x1, floorLine)
     end
   end
 end

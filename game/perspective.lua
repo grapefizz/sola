@@ -5,11 +5,11 @@ local Perspective = {}
 
 Perspective.mode = "topdown" -- "topdown" | "side"
 
--- Side view uses the SAME tile grid as top-down (pitch = tileSize).
--- Walls rise inside the cell from the floor strip upward.
-Perspective.WALL_HEIGHT = 0.85
-Perspective.FLOOR_FACE = 0.34 -- brick platform face
-Perspective.FLOOR_THICK = 0.14 -- front lip under the platform
+-- Side view: one grid cell = floor face + wall stack (they share the cell height).
+Perspective.FLOOR_FACE = 0.28 -- brick platform face (fraction of cell)
+Perspective.FLOOR_THICK = 0.12 -- front lip under the platform
+-- Wall fills the rest of the cell above the floor (front & side match).
+Perspective.WALL_HEIGHT = 1 - Perspective.FLOOR_FACE
 
 function Perspective.isSide()
   return Perspective.mode == "side"
@@ -81,9 +81,12 @@ function Perspective.floorMetrics(tileSize)
   return tileSize, thick, faceH
 end
 
+-- Full wall height fills the cell above the floor so ground + wall = one grid cell.
 function Perspective.wallHeight(tileSize, fill)
   fill = fill or 1
-  return tileSize * Perspective.WALL_HEIGHT * fill
+  local faceH = tileSize * Perspective.FLOOR_FACE
+  local maxWall = tileSize - faceH
+  return maxWall * fill
 end
 
 function Perspective.visibleTileRange(camera, tileSize, columns, rows)
@@ -101,12 +104,6 @@ function Perspective.visibleTileRange(camera, tileSize, columns, rows)
   maxCol = math.min(columns, math.floor((camera.x + halfWidth) / tileSize) + 1)
   minRow = math.max(1, math.floor((camera.y - halfHeight) / tileSize) + 1)
   maxRow = math.min(rows, math.floor((camera.y + halfHeight) / tileSize) + 1)
-
-  if Perspective.mode == "side" then
-    -- Walls rise into the cell above.
-    minRow = math.max(1, minRow - 1)
-    maxRow = math.min(rows, maxRow + 1)
-  end
 
   return minCol, maxCol, minRow, maxRow
 end
