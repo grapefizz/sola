@@ -1649,7 +1649,7 @@ end
 
 function love.mousereleased(x, y, button)
   if state == "play" and editor and editor.active then
-    editor:mousereleased(x, y, button)
+    editor:mousereleased(x, y, button, grid, camera)
   end
   if button == 1 then
     pressingCube = false
