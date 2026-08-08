@@ -27,4 +27,10 @@ function Camera:worldToScreen(x, y)
     height / 2 + (y - self.y) * self.zoom
 end
 
+function Camera:screenToWorld(x, y)
+  local width, height = love.graphics.getDimensions()
+  return self.x + (x - width / 2) / self.zoom,
+    self.y + (y - height / 2) / self.zoom
+end
+
 return Camera

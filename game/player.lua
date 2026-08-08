@@ -8,6 +8,7 @@ function Player.new(col, row)
     movesRemaining = 20,
     maxMoves = 20,
     startSize = 30,
+    dead = false,
     movement = {
       active = false,
       elapsed = 0,
@@ -17,6 +18,7 @@ function Player.new(col, row)
       toCol = col,
       toRow = row,
       moveCost = 0,
+      deadly = false,
     },
   }, Player)
 end
@@ -30,12 +32,16 @@ function Player:update(dt, grid)
   movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
   if movement.elapsed >= movement.duration then
     grid:addWater(movement.toCol, movement.toRow)
+    if movement.deadly then
+      self.dead = true
+      self.movesRemaining = 0
+    end
     movement.active = false
   end
 end
 
 function Player:keypressed(key, grid)
-  if self.movesRemaining == 0 or self.movement.active then
+  if self.dead or self.movesRemaining == 0 or self.movement.active then
     return
   end
 
@@ -53,11 +59,12 @@ function Player:keypressed(key, grid)
   end
 
   col, row = grid:clamp(col, row)
-  if col == self.col and row == self.row then
+  if (col == self.col and row == self.row) or not grid:hasGround(col, row) then
     return
   end
 
-  local moveCost = grid:hasWater(col, row) and 0 or 1
+  local deadly = grid:isFireTile(col, row)
+  local moveCost = deadly and 0 or math.min(grid:getMoveCost(col, row), self.movesRemaining)
   local movement = self.movement
   movement.active = true
   movement.elapsed = 0
@@ -66,6 +73,7 @@ function Player:keypressed(key, grid)
   movement.toCol = col
   movement.toRow = row
   movement.moveCost = moveCost
+  movement.deadly = deadly
 
   self.col = col
   self.row = row
@@ -130,7 +138,9 @@ function Player:drawHud()
   love.graphics.setColor(0.92, 0.97, 1)
   love.graphics.print("Ice Cube", 18, 14)
   love.graphics.setColor(0.58, 0.75, 0.9)
-  if self.movesRemaining > 0 then
+  if self.dead then
+    love.graphics.print("The ice cube burned up! Press R to restart.", 18, 38)
+  elseif self.movesRemaining > 0 then
     love.graphics.print("Moves until melted: " .. self.movesRemaining, 18, 38)
   else
     love.graphics.print("The ice cube has melted!", 18, 38)
