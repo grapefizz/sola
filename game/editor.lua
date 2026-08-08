@@ -14,7 +14,7 @@ local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
-local LEGEND_H = 72
+local LEGEND_H = 92
 
 local hudFont
 
@@ -175,6 +175,7 @@ function Editor.new(spawnCol, spawnRow)
     loadDropdownScroll = 0,
     loadOptions = {},
     paintingButton = nil,
+    rectangle = nil,
     namingOpen = false,
     namingText = "",
     namingCursorBlink = 0,
@@ -191,6 +192,7 @@ function Editor:setActive(active)
   self:setStatus(active and "Editor enabled" or "")
   self.loadDropdownOpen = false
   self.paintingButton = nil
+  self.rectangle = nil
   self:closeNaming()
 end
 
@@ -588,11 +590,46 @@ function Editor:mousepressed(x, y, button, grid, camera)
     return
   end
 
+  if button == 1 and love.keyboard.isDown("lshift", "rshift") then
+    local col, row = self:getTileAt(x, y, grid, camera)
+    if col then
+      self.rectangle = {
+        startCol = col,
+        startRow = row,
+        endCol = col,
+        endRow = row,
+        tool = self.tool,
+      }
+    end
+    return
+  end
+
   self.paintingButton = button
   self:paintAt(x, y, button, grid, camera)
 end
 
-function Editor:mousereleased(_, _, button)
+function Editor:mousereleased(x, y, button, grid, camera)
+  if button == 1 and self.rectangle then
+    local col, row = self:getTileAt(x, y, grid, camera)
+    if col then
+      self.rectangle.endCol = col
+      self.rectangle.endRow = row
+    end
+
+    local rectangle = self.rectangle
+    local minCol = math.min(rectangle.startCol, rectangle.endCol)
+    local maxCol = math.max(rectangle.startCol, rectangle.endCol)
+    local minRow = math.min(rectangle.startRow, rectangle.endRow)
+    local maxRow = math.max(rectangle.startRow, rectangle.endRow)
+    self.rectangle = nil
+
+    for tileRow = minRow, maxRow do
+      for tileCol = minCol, maxCol do
+        self:applyTool(rectangle.tool, tileCol, tileRow, grid)
+      end
+    end
+  end
+
   if self.paintingButton == button then
     self.paintingButton = nil
   end
@@ -760,7 +797,14 @@ function Editor:update(dt, grid, camera)
 
   self:clampCamera(grid, camera)
 
-  if self.paintingButton and love.mouse.isDown(self.paintingButton) then
+  if self.rectangle and love.mouse.isDown(1) then
+    local x, y = love.mouse.getPosition()
+    local col, row = self:getTileAt(x, y, grid, camera)
+    if col then
+      self.rectangle.endCol = col
+      self.rectangle.endRow = row
+    end
+  elseif self.paintingButton and love.mouse.isDown(self.paintingButton) then
     local x, y = love.mouse.getPosition()
     self:paintAt(
       x,
@@ -801,7 +845,27 @@ function Editor:draw(grid, camera)
     camera
   )
 
-  if col and not self:isOverHud(mouseX, mouseY) then
+  if self.rectangle then
+    local rectangle = self.rectangle
+    local minCol = math.min(rectangle.startCol, rectangle.endCol)
+    local maxCol = math.max(rectangle.startCol, rectangle.endCol)
+    local minRow = math.min(rectangle.startRow, rectangle.endRow)
+    local maxRow = math.max(rectangle.startRow, rectangle.endRow)
+    local left = (minCol - 1) * grid.size
+    local top = (minRow - 1) * grid.size
+    local right = maxCol * grid.size
+    local bottom = maxRow * grid.size
+    local x1, y1 = camera:worldToScreen(left, top)
+    local x2, y2 = camera:worldToScreen(right, bottom)
+
+    love.graphics.setColor(0.35, 0.78, 1, 0.22)
+    love.graphics.rectangle("fill", x1, y1, x2 - x1, y2 - y1)
+    love.graphics.setColor(0.65, 0.92, 1, 0.95)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", x1, y1, x2 - x1, y2 - y1)
+  end
+
+  if col and not self.rectangle and not self:isOverHud(mouseX, mouseY) then
     local worldX, worldY = grid:tileCenter(col, row)
     local x, y = camera:worldToScreen(worldX, worldY)
     local size = grid.size * camera.zoom
@@ -1090,16 +1154,23 @@ function Editor:draw(grid, camera)
   )
   love.graphics.setColor(0.58, 0.75, 0.9)
   love.graphics.printf(
-    "Left-drag Paint  ·  Right-drag Erase  ·  Ctrl+S Save  ·  L Load  ·  N/C New Blank  ·  F Fill Ground",
+    "Left-drag Paint  ·  Shift+drag Rectangle  ·  Right-drag Erase",
     12,
     legendY + 27,
     screenWidth - 24,
     "center"
   )
   love.graphics.printf(
-    "WASD/Arrows Pan  ·  Mouse Wheel Zoom  ·  E Play/Edit  ·  Esc Menu",
+    "Ctrl+S Save  ·  L Load  ·  N/C New Blank  ·  F Fill Ground",
     12,
     legendY + 47,
+    screenWidth - 24,
+    "center"
+  )
+  love.graphics.printf(
+    "WASD/Arrows Pan  ·  Mouse Wheel Zoom  ·  E Play/Edit  ·  Esc Menu",
+    12,
+    legendY + 67,
     screenWidth - 24,
     "center"
   )
