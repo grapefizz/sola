@@ -723,7 +723,7 @@ function Grid:getUnderWall(col, row)
   return wall and wall.under or nil
 end
 
--- sizeRatio is movesRemaining/maxMoves (1 = full cube). Bigger fill = taller wall = smaller cube required.
+-- sizeRatio is timeRemaining/maxTime (1 = full cube). Bigger fill = taller wall = smaller cube required.
 function Grid:canPassHalfWall(col, row, sizeRatio)
   local wall = self.wallTiles[self:key(col, row)]
   if not wall then
@@ -904,17 +904,15 @@ function Grid:getConnectedSideWallFurthestRight(col, row)
   return furthest
 end
 
-function Grid:getMoveCost(col, row)
+-- Seconds removed from the melt timer when entering this tile (negative = restore time).
+function Grid:getTimeDelta(col, row)
   if self:isSnowflakeTile(col, row) then
-    return -1
-  end
-  if self:isIceTile(col, row) then
-    return 0
+    return -2
   end
   if self:isInFireZone(col, row) then
     return 2
   end
-  return self:hasWater(col, row) and 0 or 1
+  return 0
 end
 
 

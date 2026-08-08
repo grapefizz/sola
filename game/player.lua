@@ -10,6 +10,7 @@ local SMASH_SPEED_FACTOR = 1.05
 local PLAYER_FRAME_SIZE = 128
 local PLAYER_FRAME_COUNT = 18
 local PLAYER_FRAME_DURATION = 1 / 12
+local MELT_TIME = 30
 local playerAnimation
 
 local function getPlayerAnimation()
@@ -102,8 +103,8 @@ function Player.new(col, row)
   return setmetatable({
     col = col,
     row = row,
-    movesRemaining = 20,
-    maxMoves = 20,
+    timeRemaining = MELT_TIME,
+    maxTime = MELT_TIME,
     startSize = 30,
     dead = false,
     won = false,
@@ -120,7 +121,7 @@ function Player.new(col, row)
       fromRow = row,
       toCol = col,
       toRow = row,
-      moveCost = 0,
+      timeCost = 0,
       deadly = false,
       jumping = false,
     },
@@ -157,6 +158,17 @@ function Player:canSmash(grid)
   return self:currentSpeedFactor() >= SMASH_SPEED_FACTOR
 end
 
+function Player:sizeRatio()
+  if self.maxTime <= 0 then
+    return 0
+  end
+  return math.max(0, self.timeRemaining / self.maxTime)
+end
+
+function Player:isMelted()
+  return self.timeRemaining <= 0 and not self.dead
+end
+
 function Player:trySmashWallAhead(grid, col, row)
   col, row = grid:clamp(col, row)
   if (col == self.col and row == self.row)
@@ -164,11 +176,8 @@ function Player:trySmashWallAhead(grid, col, row)
     or not self:canSmash(grid)
     or not grid:hasGround(col, row)
     or self.dead
-    or self.won then
-    return false
-  end
-  local deadly = grid:isFireTile(col, row)
-  if not deadly and self.movesRemaining <= 0 and grid:getMoveCost(col, row) > 0 then
+    or self.won
+    or self:isMelted() then
     return false
   end
   return grid:breakWall(col, row)
@@ -182,7 +191,8 @@ function Player:trySmashBoulderAhead(grid, col, row)
     or not grid:isCrackedBoulder(col, row)
     or not self:canSmash(grid)
     or self.dead
-    or self.won then
+    or self.won
+    or self:isMelted() then
     return false
   end
   return grid:breakBoulder(col, row)
@@ -190,19 +200,16 @@ end
 
 function Player:canStepTo(grid, col, row)
   col, row = grid:clamp(col, row)
-  local sizeRatio = self.maxMoves > 0 and (self.movesRemaining / self.maxMoves) or 0
+  local sizeRatio = self:sizeRatio()
   if (col == self.col and row == self.row)
     or not grid:hasGround(col, row)
     or grid:isBlocking(col, row, sizeRatio) then
     return false
   end
-  if self.dead or self.won then
+  if self.dead or self.won or self:isMelted() then
     return false
   end
   local deadly = grid:isFireTile(col, row)
-  if not deadly and self.movesRemaining <= 0 and grid:getMoveCost(col, row) > 0 then
-    return false
-  end
   return true, col, row, deadly
 end
 
@@ -231,13 +238,11 @@ function Player:canJumpLand(grid, col, row)
     or not grid:hasGround(col, row)
     or self.dead
     or self.won
+    or self:isMelted()
     or self:isJumpBlocked(grid, col, row) then
     return false
   end
   local deadly = grid:isFireTile(col, row)
-  if not deadly and self.movesRemaining <= 0 and grid:getMoveCost(col, row) > 0 then
-    return false
-  end
   return true, col, row, deadly
 end
 
@@ -249,15 +254,24 @@ function Player:canJumpOver(grid, col, row)
   return not self:isJumpBlocked(grid, col, row)
 end
 
+function Player:applyTimeDelta(delta)
+  if delta == 0 then
+    return 0
+  end
+  local applied = delta
+  if delta < 0 then
+    applied = -math.min(-delta, self.maxTime - self.timeRemaining)
+  else
+    applied = math.min(delta, self.timeRemaining)
+  end
+  self.timeRemaining = self.timeRemaining - applied
+  return applied
+end
+
 function Player:beginStep(grid, col, row, deadly, jumping)
-  local rawCost = grid:getMoveCost(col, row)
-  local moveCost = 0
+  local timeCost = 0
   if not deadly then
-    if rawCost < 0 then
-      moveCost = -math.min(-rawCost, self.maxMoves - self.movesRemaining)
-    else
-      moveCost = math.min(rawCost, self.movesRemaining)
-    end
+    timeCost = self:applyTimeDelta(grid:getTimeDelta(col, row))
   end
 
   local movement = self.movement
@@ -269,13 +283,12 @@ function Player:beginStep(grid, col, row, deadly, jumping)
   movement.fromRow = self.row
   movement.toCol = col
   movement.toRow = row
-  movement.moveCost = moveCost
+  movement.timeCost = timeCost
   movement.deadly = deadly
   movement.jumping = jumping and true or false
 
   self.col = col
   self.row = row
-  self.movesRemaining = self.movesRemaining - moveCost
 end
 
 function Player:inSideView(grid)
@@ -287,13 +300,10 @@ end
 
 -- Space jump: vault one block over; prefer landing one block higher when possible.
 function Player:tryJump(grid)
-  if self.dead or self.won or self.movement.active then
+  if self.dead or self.won or self:isMelted() or self.movement.active then
     return false
   end
   if not self:inSideView(grid) then
-    return false
-  end
-  if self.movesRemaining == 0 then
     return false
   end
 
@@ -350,7 +360,7 @@ end
 
 function Player:continueSlide(grid)
   local slide = self.slide
-  if not slide.active or self.dead or self.movement.active then
+  if not slide.active or self.dead or self:isMelted() or self.movement.active then
     return
   end
 
@@ -379,6 +389,10 @@ function Player:continueSlide(grid)
 end
 
 function Player:update(dt, grid)
+  if not self.dead and not self.won and self.timeRemaining > 0 then
+    self.timeRemaining = math.max(0, self.timeRemaining - dt)
+  end
+
   local movement = self.movement
   if not movement.active then
     if self.slide.active then
@@ -406,7 +420,7 @@ function Player:update(dt, grid)
 
     if movement.deadly then
       self.dead = true
-      self.movesRemaining = 0
+      self.timeRemaining = 0
       self:stopSlide()
     elseif grid:isTeaTile(movement.toCol, movement.toRow) then
       if grid:isTeaUnlocked() then
@@ -415,7 +429,7 @@ function Player:update(dt, grid)
       end
     end
     movement.active = false
-    if self.slide.active and not self.dead and not self.won then
+    if self.slide.active and not self.dead and not self.won and not self:isMelted() then
       self:continueSlide(grid)
     end
   end
@@ -423,7 +437,7 @@ end
 
 
 function Player:keypressed(key, grid)
-  if self.dead or self.won then
+  if self.dead or self.won or self:isMelted() then
     return
   end
 
@@ -448,10 +462,6 @@ function Player:keypressed(key, grid)
 
   -- Locked in until the slide hits something.
   if self.movement.active or self.slide.active then
-    return
-  end
-
-  if self.movesRemaining == 0 then
     return
   end
 
@@ -488,10 +498,10 @@ function Player:getDrawState()
 
 
   local easedProgress = progress * progress * (3 - 2 * progress)
-  local displayedMoves = self.movesRemaining
+  local displayedTime = self.timeRemaining
   local col, row = self.col, self.row
   if movement.active then
-    displayedMoves = displayedMoves + movement.moveCost * (1 - easedProgress)
+    displayedTime = displayedTime + movement.timeCost * (1 - easedProgress)
     col = movement.fromCol + (movement.toCol - movement.fromCol) * easedProgress
     row = movement.fromRow + (movement.toRow - movement.fromRow) * easedProgress
   end
@@ -501,7 +511,8 @@ function Player:getDrawState()
     hop = math.sin(easedProgress * math.pi)
   end
 
-  return col, row, self.startSize * (displayedMoves / self.maxMoves), hop
+  local sizeRatio = self.maxTime > 0 and (displayedTime / self.maxTime) or 0
+  return col, row, self.startSize * math.max(0, sizeRatio), hop
 end
 
 
@@ -563,8 +574,9 @@ function Player:drawHud(grid)
     love.graphics.print("Iced tea reached! Level complete.", 18, 38)
   elseif self.dead then
     love.graphics.print("The ice cube burned up! Press R to restart.", 18, 38)
-  elseif self.movesRemaining > 0 then
-    local line = "Moves until melted: " .. self.movesRemaining
+  elseif self.timeRemaining > 0 then
+    local seconds = math.ceil(self.timeRemaining)
+    local line = "Time until melted: " .. seconds .. "s"
     if grid and self:inSideView(grid) then
       line = line .. "  ·  Space to jump"
     end
