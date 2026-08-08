@@ -17,6 +17,7 @@ local NAME_MAX_LEN = 24
 local LEGEND_H = 92
 
 local hudFont
+local previewSprites
 
 local function controlIsDown()
   return love.keyboard.isDown("lctrl", "rctrl")
@@ -27,6 +28,160 @@ local function getHudFont()
     hudFont = love.graphics.newFont("assets/fonts/PixelifySans-Regular.ttf", HUD_FONT_SIZE)
   end
   return hudFont
+end
+
+local function getPreviewSprites()
+  if previewSprites then
+    return previewSprites
+  end
+
+  previewSprites = {
+    ground = love.graphics.newImage("assets/floor.png"),
+    ice = love.graphics.newImage("assets/ice.png"),
+    snowflake = love.graphics.newImage("assets/snowflake.png"),
+  }
+  previewSprites.ground:setFilter("linear", "linear")
+  previewSprites.ice:setFilter("linear", "linear")
+  previewSprites.snowflake:setFilter("linear", "linear")
+  return previewSprites
+end
+
+local function withAlpha(r, g, b, a, alpha)
+  love.graphics.setColor(r, g, b, a * alpha)
+end
+
+local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom)
+  local alpha = 0.5
+  local x = cx - size / 2
+  local y = cy - size / 2
+  local sprites = getPreviewSprites()
+
+  if tool == "ground" then
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(
+      sprites.ground,
+      x,
+      y,
+      0,
+      size / sprites.ground:getWidth(),
+      size / sprites.ground:getHeight()
+    )
+  elseif tool == "fire" then
+    withAlpha(0.95, 0.35, 0.08, 1, alpha)
+    love.graphics.rectangle("fill", x + 2, y + 2, size - 4, size - 4, 3, 3)
+    withAlpha(1, 0.7, 0.2, 1, alpha)
+    love.graphics.rectangle("fill", x + size * 0.3, y + size * 0.25, size * 0.4, size * 0.5, 2, 2)
+  elseif tool == "ice" then
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(
+      sprites.ice,
+      x,
+      y,
+      0,
+      size / sprites.ice:getWidth(),
+      size / sprites.ice:getHeight()
+    )
+  elseif tool == "snowflake" then
+    local targetSize = size * 0.82
+    local scale = targetSize / math.max(
+      sprites.snowflake:getWidth(),
+      sprites.snowflake:getHeight()
+    )
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(
+      sprites.snowflake,
+      cx,
+      cy,
+      0,
+      scale,
+      scale,
+      sprites.snowflake:getWidth() / 2,
+      sprites.snowflake:getHeight() / 2
+    )
+  elseif tool == "tea" then
+    withAlpha(0.16, 0.08, 0.03, 0.35, alpha)
+    love.graphics.ellipse("fill", cx, cy + 13 * zoom, 13 * zoom, 4 * zoom)
+    withAlpha(0.72, 0.34, 0.08, 0.95, alpha)
+    love.graphics.polygon(
+      "fill",
+      cx - 10 * zoom, cy - 10 * zoom,
+      cx + 10 * zoom, cy - 10 * zoom,
+      cx + 7 * zoom, cy + 13 * zoom,
+      cx - 7 * zoom, cy + 13 * zoom
+    )
+    withAlpha(0.78, 0.94, 1, 0.9, alpha)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.polygon(
+      "line",
+      cx - 10 * zoom, cy - 10 * zoom,
+      cx + 10 * zoom, cy - 10 * zoom,
+      cx + 7 * zoom, cy + 13 * zoom,
+      cx - 7 * zoom, cy + 13 * zoom
+    )
+  elseif tool == "side_wall" then
+    local stripW = size * 0.5
+    local stripX = wallFacing == "right" and (x + size - stripW) or x
+    withAlpha(0.32, 0.48, 0.62, 0.95, alpha)
+    love.graphics.rectangle("fill", stripX, y + 1, stripW, size - 2, 2, 2)
+    withAlpha(0.55, 0.72, 0.88, 0.85, alpha)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", stripX, y + 1, stripW, size - 2, 2, 2)
+  elseif tool == "front_wall" or tool == "cracked_wall" then
+    if tool == "cracked_wall" then
+      withAlpha(0.48, 0.34, 0.26, 0.95, alpha)
+    else
+      withAlpha(0.55, 0.38, 0.28, 0.95, alpha)
+    end
+    love.graphics.rectangle("fill", x + 1, y + 1, size - 2, size - 2, 2, 2)
+    withAlpha(0.78, 0.58, 0.42, 0.9, alpha)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", x + 1, y + 1, size - 2, size - 2, 2, 2)
+    if tool == "cracked_wall" then
+      withAlpha(0.18, 0.10, 0.06, 0.95, alpha)
+      love.graphics.setLineWidth(2)
+      love.graphics.line(
+        x + 8, y + 6,
+        x + size * 0.42, y + size * 0.45,
+        x + 10, y + size - 7
+      )
+      love.graphics.line(
+        x + size * 0.42, y + size * 0.45,
+        x + size - 9, y + size * 0.28
+      )
+    end
+  elseif tool == "boulder" or tool == "cracked_boulder" then
+    local pad = size * 0.12
+    local bx = x + pad
+    local by = y + pad
+    local bsize = size - pad * 2
+    if tool == "cracked_boulder" then
+      withAlpha(0.36, 0.34, 0.32, 0.98, alpha)
+    else
+      withAlpha(0.42, 0.40, 0.38, 0.98, alpha)
+    end
+    love.graphics.rectangle("fill", bx, by, bsize, bsize, 5, 5)
+    withAlpha(0.62, 0.60, 0.56, 0.9, alpha)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", bx, by, bsize, bsize, 5, 5)
+    if tool == "cracked_boulder" then
+      withAlpha(0.12, 0.10, 0.08, 0.95, alpha)
+      love.graphics.setLineWidth(2)
+      love.graphics.line(
+        bx + bsize * 0.2, by + bsize * 0.15,
+        bx + bsize * 0.45, by + bsize * 0.48,
+        bx + bsize * 0.22, by + bsize * 0.85
+      )
+      love.graphics.line(
+        bx + bsize * 0.45, by + bsize * 0.48,
+        bx + bsize * 0.82, by + bsize * 0.35
+      )
+    end
+  elseif tool == "erase" then
+    withAlpha(0.95, 0.25, 0.3, 0.85, alpha)
+    love.graphics.setLineWidth(2.5)
+    love.graphics.line(x + 6, y + 6, x + size - 6, y + size - 6)
+    love.graphics.line(x + size - 6, y + 6, x + 6, y + size - 6)
+  end
 end
 
 local function sourceLevelsDir()
@@ -925,9 +1080,17 @@ function Editor:draw(grid, camera)
     local x, y = camera:worldToScreen(worldX, worldY)
     local size = grid.size * camera.zoom
 
-    love.graphics.setColor(1, 1, 1, 0.8)
-    love.graphics.setLineWidth(2)
+    drawToolGhost(
+      self.tool,
+      self.wallFacing,
+      x,
+      y,
+      size,
+      camera.zoom
+    )
 
+    love.graphics.setColor(1, 1, 1, 0.55)
+    love.graphics.setLineWidth(2)
     love.graphics.rectangle(
       "line",
       x - size / 2,
