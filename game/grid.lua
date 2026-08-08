@@ -263,6 +263,7 @@ function Grid:addWall(col, row, texture, lean, options)
     texture = texture,
     lean = texture == "side" and lean or nil,
     creased = options.creased and true or false,
+    cracked = options.cracked and true or false,
   }
 end
 
@@ -270,8 +271,23 @@ function Grid:removeWall(col, row)
   self.wallTiles[self:key(col, row)] = nil
 end
 
+function Grid:breakWall(col, row)
+  local key = self:key(col, row)
+  local wall = self.wallTiles[key]
+  if not wall or not wall.cracked then
+    return false
+  end
+  self.wallTiles[key] = nil
+  return true
+end
+
 function Grid:isWallTile(col, row)
   return self.wallTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:isCrackedWall(col, row)
+  local wall = self.wallTiles[self:key(col, row)]
+  return wall ~= nil and wall.cracked == true
 end
 
 function Grid:getWallTexture(col, row)
@@ -410,7 +426,9 @@ function Grid:serialize()
         local wall = self.wallTiles[self:key(col, row)]
         local lean = wall.lean or "left"
         if wall.texture == "front" then
-          cells[col] = "W"
+          cells[col] = wall.cracked and "X" or "W"
+        elseif wall.cracked then
+          cells[col] = lean == "right" and "Z" or "Y"
         elseif wall.creased then
           cells[col] = lean == "right" and "D" or "C"
         else
@@ -450,10 +468,16 @@ function Grid:load(serialized)
         self:addTea(col, row)
       elseif cell == "W" then
         self:addWall(col, row, "front", nil, { silent = true })
+      elseif cell == "X" then
+        self:addWall(col, row, "front", nil, { silent = true, cracked = true })
       elseif cell == "V" then
         self:addWall(col, row, "side", "left", { silent = true })
       elseif cell == "E" then
         self:addWall(col, row, "side", "right", { silent = true })
+      elseif cell == "Y" then
+        self:addWall(col, row, "side", "left", { silent = true, cracked = true })
+      elseif cell == "Z" then
+        self:addWall(col, row, "side", "right", { silent = true, cracked = true })
       elseif cell == "C" then
         self:addWall(col, row, "side", "left", { silent = true, creased = true })
       elseif cell == "D" then
@@ -626,7 +650,11 @@ function Grid:draw(zoom, camera)
       if kind == "front" then
         local x = (wall.col - 1) * self.size
         local y = (wall.row - 1) * self.size
-        love.graphics.setColor(0.55, 0.38, 0.28, 0.95)
+        if wall.cracked then
+          love.graphics.setColor(0.48, 0.34, 0.26, 0.95)
+        else
+          love.graphics.setColor(0.55, 0.38, 0.28, 0.95)
+        end
         love.graphics.rectangle(
           "fill",
           x + 1,
@@ -647,6 +675,23 @@ function Grid:draw(zoom, camera)
           2,
           2
         )
+        if wall.cracked then
+          love.graphics.setColor(0.18, 0.10, 0.06, 0.95)
+          love.graphics.setLineWidth(2 / zoom)
+          love.graphics.line(
+            x + 8, y + 6,
+            x + self.size * 0.42, y + self.size * 0.45,
+            x + 10, y + self.size - 7
+          )
+          love.graphics.line(
+            x + self.size * 0.42, y + self.size * 0.45,
+            x + self.size - 9, y + self.size * 0.28
+          )
+          love.graphics.line(
+            x + self.size * 0.38, y + self.size * 0.55,
+            x + self.size - 8, y + self.size - 10
+          )
+        end
       end
     end
   end
@@ -675,7 +720,11 @@ function Grid:draw(zoom, camera)
           stripX = lean == "right" and (x + self.size - stripW) or x
         end
 
-        love.graphics.setColor(0.32, 0.48, 0.62, 0.95)
+        if wall.cracked then
+          love.graphics.setColor(0.26, 0.40, 0.52, 0.95)
+        else
+          love.graphics.setColor(0.32, 0.48, 0.62, 0.95)
+        end
         love.graphics.rectangle(
           "fill",
           stripX,
@@ -709,6 +758,21 @@ function Grid:draw(zoom, camera)
           love.graphics.setColor(0.70, 0.84, 0.96, 0.55)
           love.graphics.setLineWidth(1 / zoom)
           love.graphics.line(creaseX - 2, y + 3, creaseX - 2, y + self.size - 3)
+        end
+
+        if wall.cracked then
+          love.graphics.setColor(0.08, 0.12, 0.18, 0.95)
+          love.graphics.setLineWidth(2 / zoom)
+          local midX = stripX + stripW * 0.5
+          love.graphics.line(
+            midX - 4, y + 5,
+            midX + 2, y + self.size * 0.45,
+            midX - 3, y + self.size - 6
+          )
+          love.graphics.line(
+            midX + 2, y + self.size * 0.45,
+            midX + 6, y + self.size * 0.62
+          )
         end
       end
     end

@@ -3,6 +3,8 @@ Player.__index = Player
 
 local MOVE_DURATION = 0.14
 local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 -- 25% faster on ice
+-- Cracked walls break when approaching at least this much faster than a normal step.
+local SMASH_SPEED_FACTOR = 1.05
 
 local function directionFromKey(key)
   if key == "left" or key == "a" then
@@ -50,6 +52,41 @@ function Player:stopSlide()
   slide.active = false
   slide.dx = 0
   slide.dy = 0
+end
+
+function Player:currentSpeedFactor()
+  local movement = self.movement
+  if movement.active and movement.duration > 0 then
+    return MOVE_DURATION / movement.duration
+  end
+  if self.slide.active then
+    return MOVE_DURATION / ICE_MOVE_DURATION
+  end
+  return 1
+end
+
+function Player:canSmashWall(grid)
+  if grid:isIceTile(self.col, self.row) then
+    return true
+  end
+  return self:currentSpeedFactor() >= SMASH_SPEED_FACTOR
+end
+
+function Player:trySmashWallAhead(grid, col, row)
+  col, row = grid:clamp(col, row)
+  if (col == self.col and row == self.row)
+    or not grid:isCrackedWall(col, row)
+    or not self:canSmashWall(grid)
+    or not grid:hasGround(col, row)
+    or self.dead
+    or self.won then
+    return false
+  end
+  local deadly = grid:isFireTile(col, row)
+  if not deadly and self.movesRemaining <= 0 and grid:getMoveCost(col, row) > 0 then
+    return false
+  end
+  return grid:breakWall(col, row)
 end
 
 function Player:canStepTo(grid, col, row)
@@ -109,6 +146,7 @@ function Player:continueSlide(grid)
 
   local nextCol = self.col + slide.dx
   local nextRow = self.row + slide.dy
+  self:trySmashWallAhead(grid, nextCol, nextRow)
   local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
   if not ok then
     self:stopSlide()
@@ -170,7 +208,9 @@ function Player:keypressed(key, grid)
     return
   end
 
-  local ok, col, row, deadly = self:canStepTo(grid, self.col + dx, self.row + dy)
+  local nextCol, nextRow = self.col + dx, self.row + dy
+  self:trySmashWallAhead(grid, nextCol, nextRow)
+  local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
   if not ok then
     return
   end
