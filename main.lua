@@ -1,11 +1,16 @@
 local player = {
-  x = 400,
-  y = 300,
-  radius = 22,
-  speed = 280,
+  col = 10,
+  row = 8,
+  movesRemaining = 20,
+  maxMoves = 20,
+  startSize = 30,
 }
 
-local elapsed = 0
+local grid = {
+  size = 40,
+  columns = 20,
+  rows = 15,
+}
 
 function love.load()
   love.window.setTitle("Ice Cube")
@@ -13,50 +18,77 @@ function love.load()
   love.graphics.setDefaultFilter("nearest", "nearest")
 end
 
-function love.update(dt)
-  elapsed = elapsed + dt
-
-  local dx, dy = 0, 0
-  if love.keyboard.isDown("left", "a") then dx = dx - 1 end
-  if love.keyboard.isDown("right", "d") then dx = dx + 1 end
-  if love.keyboard.isDown("up", "w") then dy = dy - 1 end
-  if love.keyboard.isDown("down", "s") then dy = dy + 1 end
-
-  if dx ~= 0 or dy ~= 0 then
-    local length = math.sqrt(dx * dx + dy * dy)
-    player.x = player.x + dx / length * player.speed * dt
-    player.y = player.y + dy / length * player.speed * dt
-  end
-
-  local width, height = love.graphics.getDimensions()
-  player.x = math.max(player.radius, math.min(width - player.radius, player.x))
-  player.y = math.max(player.radius, math.min(height - player.radius, player.y))
-end
-
 function love.draw()
-  local width, height = love.graphics.getDimensions()
+  local worldWidth = grid.columns * grid.size
+  local worldHeight = grid.rows * grid.size
 
-  love.graphics.setColor(0.08, 0.18, 0.31)
-  for y = 0, height, 40 do
-    for x = 0, width, 40 do
-      local wave = math.sin(elapsed * 1.5 + x * 0.03 + y * 0.04)
-      love.graphics.circle("fill", x, y + wave * 3, 1.5)
-    end
+  love.graphics.setColor(0.06, 0.16, 0.27)
+  love.graphics.rectangle("fill", 0, 0, worldWidth, worldHeight)
+
+  love.graphics.setColor(0.13, 0.32, 0.47)
+  love.graphics.setLineWidth(1)
+  for col = 0, grid.columns do
+    local x = col * grid.size
+    love.graphics.line(x, 0, x, worldHeight)
+  end
+  for row = 0, grid.rows do
+    local y = row * grid.size
+    love.graphics.line(0, y, worldWidth, y)
   end
 
-  love.graphics.setColor(0.72, 0.94, 1)
-  love.graphics.circle("fill", player.x, player.y, player.radius)
-  love.graphics.setColor(0.25, 0.68, 0.93)
-  love.graphics.circle("line", player.x, player.y, player.radius, 32)
+  local x = (player.col - 1) * grid.size
+  local y = (player.row - 1) * grid.size
+  local cubeSize = player.startSize * (player.movesRemaining / player.maxMoves)
+
+  if cubeSize > 0 then
+    local cubeX = x + (grid.size - cubeSize) / 2
+    local cubeY = y + (grid.size - cubeSize) / 2
+    local cornerRadius = math.min(5, cubeSize / 4)
+
+    love.graphics.setColor(0.66, 0.92, 1)
+    love.graphics.rectangle("fill", cubeX, cubeY, cubeSize, cubeSize, cornerRadius, cornerRadius)
+    love.graphics.setColor(0.18, 0.58, 0.86)
+    love.graphics.rectangle("line", cubeX, cubeY, cubeSize, cubeSize, cornerRadius, cornerRadius)
+  end
 
   love.graphics.setColor(0.92, 0.97, 1)
-  love.graphics.print("Ice Cube", 24, 22)
+  love.graphics.print("Ice Cube", 18, 14)
   love.graphics.setColor(0.58, 0.75, 0.9)
-  love.graphics.print("Move with arrow keys or WASD", 24, 48)
+  if player.movesRemaining > 0 then
+    love.graphics.print("Moves until melted: " .. player.movesRemaining, 18, 38)
+  else
+    love.graphics.print("The ice cube has melted!", 18, 38)
+  end
 end
 
 function love.keypressed(key)
   if key == "escape" then
     love.event.quit()
+    return
+  end
+
+  if player.movesRemaining == 0 then
+    return
+  end
+
+  local col, row = player.col, player.row
+
+  if key == "left" or key == "a" then
+    col = col - 1
+  elseif key == "right" or key == "d" then
+    col = col + 1
+  elseif key == "up" or key == "w" then
+    row = row - 1
+  elseif key == "down" or key == "s" then
+    row = row + 1
+  end
+
+  local nextCol = math.max(1, math.min(grid.columns, col))
+  local nextRow = math.max(1, math.min(grid.rows, row))
+
+  if nextCol ~= player.col or nextRow ~= player.row then
+    player.col = nextCol
+    player.row = nextRow
+    player.movesRemaining = player.movesRemaining - 1
   end
 end
