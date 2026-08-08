@@ -1,6 +1,21 @@
 local Player = {}
 Player.__index = Player
 
+local SLIDE_INERTIA_TILES = 1
+
+local function directionFromKey(key)
+  if key == "left" or key == "a" then
+    return -1, 0
+  elseif key == "right" or key == "d" then
+    return 1, 0
+  elseif key == "up" or key == "w" then
+    return 0, -1
+  elseif key == "down" or key == "s" then
+    return 0, 1
+  end
+  return nil, nil
+end
+
 function Player.new(col, row)
   return setmetatable({
     col = col,
@@ -20,50 +35,43 @@ function Player.new(col, row)
       moveCost = 0,
       deadly = false,
     },
+    slide = {
+      active = false,
+      dx = 0,
+      dy = 0,
+      pendingDx = nil,
+      pendingDy = nil,
+      inertiaLeft = 0,
+    },
   }, Player)
 end
 
-function Player:update(dt, grid)
-  local movement = self.movement
-  if not movement.active then
-    return
-  end
-
-  movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
-  if movement.elapsed >= movement.duration then
-    grid:addWater(movement.toCol, movement.toRow)
-    if movement.deadly then
-      self.dead = true
-      self.movesRemaining = 0
-    end
-    movement.active = false
-  end
+function Player:stopSlide()
+  local slide = self.slide
+  slide.active = false
+  slide.dx = 0
+  slide.dy = 0
+  slide.pendingDx = nil
+  slide.pendingDy = nil
+  slide.inertiaLeft = 0
 end
 
-function Player:keypressed(key, grid)
-  if self.dead or self.movesRemaining == 0 or self.movement.active then
-    return
-  end
-
-  local col, row = self.col, self.row
-  if key == "left" or key == "a" then
-    col = col - 1
-  elseif key == "right" or key == "d" then
-    col = col + 1
-  elseif key == "up" or key == "w" then
-    row = row - 1
-  elseif key == "down" or key == "s" then
-    row = row + 1
-  else
-    return
-  end
-
+function Player:canStepTo(grid, col, row)
   col, row = grid:clamp(col, row)
   if (col == self.col and row == self.row) or not grid:hasGround(col, row) then
-    return
+    return false
   end
-
+  if self.dead then
+    return false
+  end
   local deadly = grid:isFireTile(col, row)
+  if not deadly and self.movesRemaining <= 0 and grid:getMoveCost(col, row) > 0 then
+    return false
+  end
+  return true, col, row, deadly
+end
+
+function Player:beginStep(grid, col, row, deadly)
   local moveCost = deadly and 0 or math.min(grid:getMoveCost(col, row), self.movesRemaining)
   local movement = self.movement
   movement.active = true
@@ -78,6 +86,130 @@ function Player:keypressed(key, grid)
   self.col = col
   self.row = row
   self.movesRemaining = self.movesRemaining - moveCost
+end
+
+function Player:queueSlideTurn(dx, dy)
+  local slide = self.slide
+  if not slide.active then
+    return
+  end
+  if dx == slide.dx and dy == slide.dy then
+    return
+  end
+  -- Keep sliding the original way a bit, then bend into the new direction.
+  if slide.pendingDx == dx and slide.pendingDy == dy then
+    return
+  end
+  slide.pendingDx = dx
+  slide.pendingDy = dy
+  slide.inertiaLeft = SLIDE_INERTIA_TILES
+end
+
+function Player:applyPendingSlideTurn()
+  local slide = self.slide
+  if slide.pendingDx == nil then
+    return
+  end
+  if slide.inertiaLeft > 0 then
+    slide.inertiaLeft = slide.inertiaLeft - 1
+    return
+  end
+  slide.dx = slide.pendingDx
+  slide.dy = slide.pendingDy
+  slide.pendingDx = nil
+  slide.pendingDy = nil
+end
+
+function Player:continueSlide(grid)
+  local slide = self.slide
+  if not slide.active or self.dead or self.movement.active then
+    return
+  end
+
+  if not grid:isIceTile(self.col, self.row) then
+    self:stopSlide()
+    return
+  end
+
+  self:applyPendingSlideTurn()
+
+  local nextCol = self.col + slide.dx
+  local nextRow = self.row + slide.dy
+  local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
+  if not ok then
+    self:stopSlide()
+    return
+  end
+
+  self:beginStep(grid, col, row, deadly)
+  if not grid:isIceTile(col, row) then
+    self:stopSlide()
+  end
+end
+
+function Player:update(dt, grid)
+  local movement = self.movement
+  if not movement.active then
+    if self.slide.active then
+      self:continueSlide(grid)
+    end
+    return
+  end
+
+  movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
+  if movement.elapsed >= movement.duration then
+    grid:addWater(movement.toCol, movement.toRow)
+    if movement.deadly then
+      self.dead = true
+      self.movesRemaining = 0
+      self:stopSlide()
+    end
+    movement.active = false
+    if self.slide.active and not self.dead then
+      self:continueSlide(grid)
+    end
+  end
+end
+
+function Player:keypressed(key, grid)
+  if self.dead then
+    return
+  end
+
+  local dx, dy = directionFromKey(key)
+  if not dx then
+    return
+  end
+
+  if self.movement.active or self.slide.active then
+    if self.slide.active then
+      self:queueSlideTurn(dx, dy)
+    end
+    return
+  end
+
+  if self.movesRemaining == 0 then
+    return
+  end
+
+  local ok, col, row, deadly = self:canStepTo(grid, self.col + dx, self.row + dy)
+  if not ok then
+    return
+  end
+
+  self:beginStep(grid, col, row, deadly)
+
+  if grid:isIceTile(col, row) then
+    local slide = self.slide
+    slide.active = true
+    slide.dx = dx
+    slide.dy = dy
+    slide.pendingDx = nil
+    slide.pendingDy = nil
+    slide.inertiaLeft = 0
+  else
+    self:stopSlide()
+  end
 end
 
 function Player:getDrawState()

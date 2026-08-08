@@ -9,6 +9,7 @@ function Grid.new(size, columns, rows, fillGround)
     groundTiles = {},
     waterTiles = {},
     fireTiles = {},
+    iceTiles = {},
     fireRadius = 1,
   }, Grid)
 
@@ -54,12 +55,14 @@ function Grid:erase(col, row)
   self.groundTiles[key] = nil
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
 end
 
 function Grid:clear()
   self.groundTiles = {}
   self.waterTiles = {}
   self.fireTiles = {}
+  self.iceTiles = {}
 end
 
 function Grid:clearWater()
@@ -82,6 +85,7 @@ function Grid:addFire(col, row)
   end
   self:setGround(col, row)
   self.waterTiles[self:key(col, row)] = nil
+  self.iceTiles[self:key(col, row)] = nil
   self.fireTiles[self:key(col, row)] = { col = col, row = row }
 end
 
@@ -91,6 +95,23 @@ end
 
 function Grid:isFireTile(col, row)
   return self.fireTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:addIce(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  self.fireTiles[self:key(col, row)] = nil
+  self.iceTiles[self:key(col, row)] = { col = col, row = row }
+end
+
+function Grid:removeIce(col, row)
+  self.iceTiles[self:key(col, row)] = nil
+end
+
+function Grid:isIceTile(col, row)
+  return self.iceTiles[self:key(col, row)] ~= nil
 end
 
 function Grid:isInFireZone(col, row)
@@ -117,6 +138,8 @@ function Grid:serialize()
     for col = 1, self.columns do
       if self:isFireTile(col, row) then
         cells[col] = "F"
+      elseif self:isIceTile(col, row) then
+        cells[col] = "I"
       elseif self:hasGround(col, row) then
         cells[col] = "#"
       else
@@ -141,6 +164,8 @@ function Grid:load(serialized)
         self:setGround(col, row)
       elseif cell == "F" then
         self:addFire(col, row)
+      elseif cell == "I" then
+        self:addIce(col, row)
       end
     end
     row = row + 1
@@ -159,6 +184,19 @@ function Grid:draw(zoom)
     local y = (tile.row - 1) * self.size
     love.graphics.setColor(0.06, 0.16, 0.27)
     love.graphics.rectangle("fill", x + 1, y + 1, self.size - 2, self.size - 2)
+  end
+
+  for _, ice in pairs(self.iceTiles) do
+    local x = (ice.col - 1) * self.size
+    local y = (ice.row - 1) * self.size
+    love.graphics.setColor(0.55, 0.82, 0.98, 0.55)
+    love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
+    love.graphics.setColor(0.85, 0.95, 1.0, 0.7)
+    love.graphics.setLineWidth(1 / zoom)
+    love.graphics.line(x + 8, y + 10, x + self.size - 14, y + self.size - 12)
+    love.graphics.line(x + 12, y + 8, x + self.size - 10, y + self.size - 14)
+    love.graphics.setColor(1, 1, 1, 0.45)
+    love.graphics.circle("fill", x + 11, y + 11, 2)
   end
 
   for _, fire in pairs(self.fireTiles) do

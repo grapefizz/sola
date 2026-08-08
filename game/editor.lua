@@ -227,7 +227,7 @@ function Editor:getDropdownRect()
     slots = math.min(DROPDOWN_MAX_VISIBLE, #self.loadOptions)
   end
   local x = HUD_X + HUD_W + 6
-  local y = buttonY(5)
+  local y = buttonY(6)
   local w = 168
   local h = 8 + slots * DROPDOWN_ITEM_H
   return x, y, w, h
@@ -264,7 +264,7 @@ function Editor:isOverHud(x, y)
   if self:isOverDropdown(x, y) then
     return true
   end
-  return x >= HUD_X and x <= HUD_X + HUD_W and y >= HUD_Y and y <= HUD_Y + 164
+  return x >= HUD_X and x <= HUD_X + HUD_W and y >= HUD_Y and y <= HUD_Y + 192
 end
 
 function Editor:getTileAt(x, y, grid, camera)
@@ -280,6 +280,7 @@ end
 function Editor:protectSpawn(grid)
   grid:setGround(self.spawnCol, self.spawnRow)
   grid:removeFire(self.spawnCol, self.spawnRow)
+  grid:removeIce(self.spawnCol, self.spawnRow)
 end
 
 function Editor:beginSave()
@@ -349,8 +350,11 @@ function Editor:applyTool(tool, col, row, grid)
   if tool == "ground" then
     grid:setGround(col, row)
     grid:removeFire(col, row)
+    grid:removeIce(col, row)
   elseif tool == "fire" then
     grid:addFire(col, row)
+  elseif tool == "ice" then
+    grid:addIce(col, row)
   elseif tool == "erase" then
     grid:erase(col, row)
   end
@@ -392,7 +396,7 @@ function Editor:hitToolButton(x, y)
   if x < BUTTON_X or x > BUTTON_X + BUTTON_W then
     return nil
   end
-  for i = 1, 5 do
+  for i = 1, 6 do
     local y0 = buttonY(i)
     if y >= y0 and y <= y0 + BUTTON_H then
       return i
@@ -456,12 +460,16 @@ function Editor:mousepressed(x, y, button, grid, camera)
       return
     elseif toolButton == 3 then
       self.loadDropdownOpen = false
-      self.tool = "erase"
+      self.tool = "ice"
       return
     elseif toolButton == 4 then
-      self:beginSave()
+      self.loadDropdownOpen = false
+      self.tool = "erase"
       return
     elseif toolButton == 5 then
+      self:beginSave()
+      return
+    elseif toolButton == 6 then
       self:toggleLoadDropdown()
       return
     end
@@ -535,6 +543,9 @@ function Editor:keypressed(key, grid)
     self.tool = "fire"
     self.loadDropdownOpen = false
   elseif key == "3" then
+    self.tool = "ice"
+    self.loadDropdownOpen = false
+  elseif key == "4" then
     self.tool = "erase"
     self.loadDropdownOpen = false
   elseif key == "c" then
@@ -640,7 +651,7 @@ function Editor:draw(grid, camera)
   )
 
   love.graphics.setColor(0.025, 0.05, 0.09, 0.94)
-  love.graphics.rectangle("fill", HUD_X, HUD_Y, HUD_W, 164, 6, 6)
+  love.graphics.rectangle("fill", HUD_X, HUD_Y, HUD_W, 192, 6, 6)
 
   local previousFont = love.graphics.getFont()
   local font = getHudFont()
@@ -650,6 +661,7 @@ function Editor:draw(grid, camera)
   local tools = {
     { name = "ground", label = "Ground" },
     { name = "fire", label = "Fire" },
+    { name = "ice", label = "Ice Floor" },
     { name = "erase", label = "Erase" },
     { name = "save", label = "Save" },
     { name = "load", label = "Load" },
@@ -717,9 +729,9 @@ function Editor:draw(grid, camera)
 
   if self.status ~= "" and not self.namingOpen then
     love.graphics.setColor(0.025, 0.05, 0.09, 0.9)
-    love.graphics.rectangle("fill", 10, 182, 280, 24, 4, 4)
+    love.graphics.rectangle("fill", 10, 210, 280, 24, 4, 4)
     love.graphics.setColor(0.85, 0.93, 1)
-    love.graphics.print(self.status, 18, 182 + textY)
+    love.graphics.print(self.status, 18, 210 + textY)
   end
 
   if self.namingOpen then
