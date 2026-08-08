@@ -4,8 +4,8 @@ Editor.__index = Editor
 local LEVELS_DIR = "levels"
 local HUD_X, HUD_Y = 10, 10
 local HUD_W = 160
-local HUD_H = 220
-local TOOL_BUTTON_COUNT = 7
+local HUD_H = 248
+local TOOL_BUTTON_COUNT = 8
 local BUTTON_X = 18
 local BUTTON_W = 144
 local BUTTON_H = 24
@@ -324,6 +324,7 @@ function Editor:protectSpawn(grid)
   grid:removeFire(self.spawnCol, self.spawnRow)
   grid:removeIce(self.spawnCol, self.spawnRow)
   grid:removeSnowflake(self.spawnCol, self.spawnRow)
+  grid:removeTea(self.spawnCol, self.spawnRow)
 end
 
 function Editor:beginSave()
@@ -403,12 +404,15 @@ function Editor:applyTool(tool, col, row, grid)
     grid:removeFire(col, row)
     grid:removeIce(col, row)
     grid:removeSnowflake(col, row)
+    grid:removeTea(col, row)
   elseif tool == "fire" then
     grid:addFire(col, row)
   elseif tool == "ice" then
     grid:addIce(col, row)
   elseif tool == "snowflake" then
     grid:addSnowflake(col, row)
+  elseif tool == "tea" then
+    grid:addTea(col, row)
   elseif tool == "erase" then
     grid:erase(col, row)
   end
@@ -557,12 +561,16 @@ function Editor:mousepressed(x, y, button, grid, camera)
 
     elseif toolButton == 5 then
       self.loadDropdownOpen = false
-      self.tool = "erase"
+      self.tool = "tea"
       return
     elseif toolButton == 6 then
-      self:beginSave()
+      self.loadDropdownOpen = false
+      self.tool = "erase"
       return
     elseif toolButton == 7 then
+      self:beginSave()
+      return
+    elseif toolButton == 8 then
       self:toggleLoadDropdown()
       return
     end
@@ -656,6 +664,9 @@ function Editor:keypressed(key, grid)
     self.tool = "snowflake"
     self.loadDropdownOpen = false
   elseif key == "5" then
+    self.tool = "tea"
+    self.loadDropdownOpen = false
+  elseif key == "6" then
     self.tool = "erase"
     self.loadDropdownOpen = false
 
@@ -847,6 +858,7 @@ function Editor:draw(grid, camera)
     { name = "fire", label = "Fire" },
     { name = "ice", label = "Ice Floor" },
     { name = "snowflake", label = "Snowflake" },
+    { name = "tea", label = "Iced Tea Goal" },
     { name = "erase", label = "Erase" },
     { name = "save", label = "Save" },
     { name = "load", label = "Load" },
@@ -1070,7 +1082,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Iced Tea Goal  ·  6 Erase",
     12,
     legendY + 7,
     screenWidth - 24,

@@ -25,6 +25,7 @@ function Player.new(col, row)
     maxMoves = 20,
     startSize = 30,
     dead = false,
+    won = false,
     movement = {
       active = false,
       elapsed = 0,
@@ -56,7 +57,7 @@ function Player:canStepTo(grid, col, row)
   if (col == self.col and row == self.row) or not grid:hasGround(col, row) then
     return false
   end
-  if self.dead then
+  if self.dead or self.won then
     return false
   end
   local deadly = grid:isFireTile(col, row)
@@ -136,9 +137,12 @@ function Player:update(dt, grid)
       self.dead = true
       self.movesRemaining = 0
       self:stopSlide()
+    elseif grid:isTeaTile(movement.toCol, movement.toRow) then
+      self.won = true
+      self:stopSlide()
     end
     movement.active = false
-    if self.slide.active and not self.dead then
+    if self.slide.active and not self.dead and not self.won then
       self:continueSlide(grid)
     end
   end
@@ -146,7 +150,7 @@ end
 
 
 function Player:keypressed(key, grid)
-  if self.dead then
+  if self.dead or self.won then
     return
   end
 
@@ -246,7 +250,9 @@ function Player:drawHud()
   love.graphics.setColor(0.92, 0.97, 1)
   love.graphics.print("Ice Cube", 18, 14)
   love.graphics.setColor(0.58, 0.75, 0.9)
-  if self.dead then
+  if self.won then
+    love.graphics.print("Iced tea reached! Level complete.", 18, 38)
+  elseif self.dead then
     love.graphics.print("The ice cube burned up! Press R to restart.", 18, 38)
   elseif self.movesRemaining > 0 then
     love.graphics.print("Moves until melted: " .. self.movesRemaining, 18, 38)

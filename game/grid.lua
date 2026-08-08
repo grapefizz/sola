@@ -13,6 +13,7 @@ function Grid.new(size, columns, rows, fillGround)
     fireTiles = {},
     iceTiles = {},
     snowflakeTiles = {},
+    teaTiles = {},
     fireRadius = 1,
   }, Grid)
 
@@ -76,6 +77,7 @@ function Grid:erase(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
 end
 
 
@@ -86,6 +88,7 @@ function Grid:clear()
   self.fireTiles = {}
   self.iceTiles = {}
   self.snowflakeTiles = {}
+  self.teaTiles = {}
 end
 
 
@@ -100,6 +103,7 @@ function Grid:addWater(col, row)
   if self:hasGround(col, row)
     and not self:isInFireZone(col, row)
     and not self:isIceTile(col, row)
+    and not self:isTeaTile(col, row)
   then
     self.waterTiles[self:key(col, row)] = { col = col, row = row }
   end
@@ -122,6 +126,7 @@ function Grid:addFire(col, row)
   self.waterTiles[key] = nil
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
   self.fireTiles[key] = { col = col, row = row }
 end
 
@@ -146,6 +151,7 @@ function Grid:addIce(col, row)
   self.fireTiles[key] = nil
   self.waterTiles[key] = nil
   self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
   self.iceTiles[key] = { col = col, row = row }
 end
 
@@ -178,6 +184,7 @@ function Grid:addSnowflake(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.teaTiles[key] = nil
   self.snowflakeTiles[key] = { col = col, row = row }
 end
 
@@ -202,6 +209,27 @@ function Grid:isSnowflakeTile(col, row)
   return self.snowflakeTiles[self:key(col, row)] ~= nil
 end
 
+function Grid:addTea(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = { col = col, row = row }
+end
+
+function Grid:removeTea(col, row)
+  self.teaTiles[self:key(col, row)] = nil
+end
+
+function Grid:isTeaTile(col, row)
+  return self.teaTiles[self:key(col, row)] ~= nil
+end
+
 function Grid:getMoveCost(col, row)
   if self:isSnowflakeTile(col, row) then
     return -1
@@ -224,6 +252,8 @@ function Grid:serialize()
     for col = 1, self.columns do
       if self:isFireTile(col, row) then
         cells[col] = "F"
+      elseif self:isTeaTile(col, row) then
+        cells[col] = "T"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
@@ -258,6 +288,8 @@ function Grid:load(serialized)
         self:addIce(col, row)
       elseif cell == "S" then
         self:addSnowflake(col, row)
+      elseif cell == "T" then
+        self:addTea(col, row)
       end
     end
     row = row + 1
@@ -384,6 +416,39 @@ function Grid:draw(zoom, camera)
       centerX, centerY + halfHeight * 0.5,
       centerX - halfWidth * 0.5, centerY
     )
+    end
+  end
+
+
+  for _, tea in pairs(self.teaTiles) do
+    if isVisible(tea) then
+      local centerX, centerY = self:tileCenter(tea.col, tea.row)
+      love.graphics.setColor(0.16, 0.08, 0.03, 0.35)
+      love.graphics.ellipse("fill", centerX, centerY + 13, 13, 4)
+      love.graphics.setColor(0.72, 0.34, 0.08, 0.95)
+      love.graphics.polygon(
+        "fill",
+        centerX - 10, centerY - 10,
+        centerX + 10, centerY - 10,
+        centerX + 7, centerY + 13,
+        centerX - 7, centerY + 13
+      )
+      love.graphics.setColor(0.78, 0.94, 1, 0.9)
+      love.graphics.setLineWidth(1.5 / zoom)
+      love.graphics.polygon(
+        "line",
+        centerX - 10, centerY - 10,
+        centerX + 10, centerY - 10,
+        centerX + 7, centerY + 13,
+        centerX - 7, centerY + 13
+      )
+      love.graphics.ellipse("line", centerX, centerY - 10, 10, 3)
+      love.graphics.setColor(0.76, 0.94, 1, 0.9)
+      love.graphics.rectangle("fill", centerX - 5, centerY - 5, 5, 5, 1, 1)
+      love.graphics.rectangle("fill", centerX + 2, centerY + 1, 4, 4, 1, 1)
+      love.graphics.setColor(0.95, 0.35, 0.34)
+      love.graphics.setLineWidth(2 / zoom)
+      love.graphics.line(centerX + 4, centerY - 8, centerX + 10, centerY - 20)
     end
   end
 

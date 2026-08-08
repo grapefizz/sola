@@ -195,6 +195,7 @@ local function buildLevelPreview(name)
   snap:removeFire(SPAWN_COL, SPAWN_ROW)
   snap:removeIce(SPAWN_COL, SPAWN_ROW)
   snap:removeSnowflake(SPAWN_COL, SPAWN_ROW)
+  snap:removeTea(SPAWN_COL, SPAWN_ROW)
   snap:addWater(SPAWN_COL, SPAWN_ROW)
 
   local worldW = snap.columns * snap.size
@@ -278,6 +279,7 @@ local function restartRun()
     grid:removeFire(SPAWN_COL, SPAWN_ROW)
     grid:removeIce(SPAWN_COL, SPAWN_ROW)
     grid:removeSnowflake(SPAWN_COL, SPAWN_ROW)
+    grid:removeTea(SPAWN_COL, SPAWN_ROW)
   end
   player = Player.new(SPAWN_COL, SPAWN_ROW)
   local cameraX, cameraY = grid:tileCenter(player.col, player.row)
@@ -890,11 +892,9 @@ function love.update(dt)
       editor:update(dt, grid, camera)
     else
       player:update(dt, grid)
-      -- melt without burning = finished
+      -- Reaching the iced-tea goal is the only completion condition.
       if currentLevelName
-        and not player.dead
-        and player.movesRemaining <= 0
-        and not player.movement.active
+        and player.won
         and not progress.finished[currentLevelName]
       then
         markLevelFinished(currentLevelName)
