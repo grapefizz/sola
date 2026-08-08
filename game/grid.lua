@@ -958,21 +958,55 @@ function Grid:draw(zoom, camera)
 
   for _, fire in pairs(self.fireTiles) do
     if isVisible(fire) then
-    local centerX, centerY = self:tileCenter(fire.col, fire.row)
-    love.graphics.setColor(0.95, 0.24, 0.04)
-    love.graphics.polygon(
-      "fill",
-      centerX, centerY - 15,
-      centerX + 12, centerY + 12,
-      centerX - 12, centerY + 12
-    )
-    love.graphics.setColor(1.00, 0.76, 0.12)
-    love.graphics.polygon(
-      "fill",
-      centerX, centerY - 6,
-      centerX + 6, centerY + 10,
-      centerX - 6, centerY + 10
-    )
+      local centerX, centerY = self:tileCenter(fire.col, fire.row)
+      local s = self.size
+
+      -- logs
+      love.graphics.setColor(0.42, 0.26, 0.12, 0.95)
+      love.graphics.setLineWidth(4 / zoom)
+      love.graphics.line(
+        centerX - s * 0.28, centerY + s * 0.18,
+        centerX + s * 0.28, centerY + s * 0.18
+      )
+      love.graphics.setColor(0.32, 0.18, 0.08, 0.95)
+      love.graphics.setLineWidth(3.5 / zoom)
+      love.graphics.line(
+        centerX - s * 0.22, centerY + s * 0.26,
+        centerX + s * 0.12, centerY + s * 0.08
+      )
+      love.graphics.line(
+        centerX + s * 0.22, centerY + s * 0.26,
+        centerX - s * 0.12, centerY + s * 0.08
+      )
+
+      -- outer flame
+      love.graphics.setColor(0.95, 0.28, 0.05, 0.95)
+      love.graphics.polygon(
+        "fill",
+        centerX, centerY - s * 0.34,
+        centerX + s * 0.18, centerY + s * 0.12,
+        centerX + s * 0.08, centerY + s * 0.06,
+        centerX, centerY + s * 0.16,
+        centerX - s * 0.08, centerY + s * 0.06,
+        centerX - s * 0.18, centerY + s * 0.12
+      )
+      -- mid flame
+      love.graphics.setColor(1.00, 0.62, 0.10, 0.95)
+      love.graphics.polygon(
+        "fill",
+        centerX, centerY - s * 0.22,
+        centerX + s * 0.10, centerY + s * 0.08,
+        centerX, centerY + s * 0.10,
+        centerX - s * 0.10, centerY + s * 0.08
+      )
+      -- hot core
+      love.graphics.setColor(1.00, 0.92, 0.45, 0.95)
+      love.graphics.polygon(
+        "fill",
+        centerX, centerY - s * 0.10,
+        centerX + s * 0.05, centerY + s * 0.06,
+        centerX - s * 0.05, centerY + s * 0.06
+      )
     end
   end
 end

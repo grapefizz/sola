@@ -1,23 +1,47 @@
 local Editor = {}
 Editor.__index = Editor
 
+local Grid = require "game.grid"
+
 local LEVELS_DIR = "levels"
 local HUD_X, HUD_Y = 10, 10
-local HUD_W = 160
-local HUD_H = 388
-local TOOL_BUTTON_COUNT = 13
+local HUD_W = 188
 local BUTTON_X = 18
-local BUTTON_W = 144
-local BUTTON_H = 24
-local BUTTON_GAP = 28
+local BUTTON_W = 172
+local BUTTON_H = 28
+local BUTTON_GAP = 32
+local ICON_SIZE = 22
+local ICON_PAD = 3
 local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
 local LEGEND_H = 92
 
+-- Single source of truth: add a tile tool here (+ applyTool / grid draw)
+-- and its left-panel icon is snapshotted automatically.
+local TOOLS = {
+  { name = "ground", label = "Ground", icon = "tile" },
+  { name = "fire", label = "Campfire", icon = "tile" },
+  { name = "ice", label = "Ice Floor", icon = "tile" },
+  { name = "snowflake", label = "Snowflake", icon = "tile" },
+  { name = "tea", label = "Iced Tea Goal", icon = "tile" },
+  { name = "side_wall", label = "Side Wall", icon = "tile" },
+  { name = "front_wall", label = "Front Wall", icon = "tile" },
+  { name = "cracked_wall", label = "Cracked Wall", icon = "tile" },
+  { name = "boulder", label = "Boulder", icon = "tile" },
+  { name = "cracked_boulder", label = "Cracked Boulder", icon = "tile" },
+  { name = "erase", label = "Erase", icon = "erase" },
+  { name = "save", label = "Save", icon = "save" },
+  { name = "load", label = "Load", icon = "load" },
+}
+
+local TOOL_BUTTON_COUNT = #TOOLS
+local HUD_H = 18 + (TOOL_BUTTON_COUNT - 1) * BUTTON_GAP + BUTTON_H + 10
+
 local hudFont
 local previewSprites
+local toolIconCache = {}
 
 local function controlIsDown()
   return love.keyboard.isDown("lctrl", "rctrl")
@@ -50,8 +74,8 @@ local function withAlpha(r, g, b, a, alpha)
   love.graphics.setColor(r, g, b, a * alpha)
 end
 
-local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom)
-  local alpha = 0.5
+local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha)
+  alpha = alpha or 1
   local x = cx - size / 2
   local y = cy - size / 2
   local sprites = getPreviewSprites()
@@ -67,10 +91,39 @@ local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom)
       size / sprites.ground:getHeight()
     )
   elseif tool == "fire" then
-    withAlpha(0.95, 0.35, 0.08, 1, alpha)
-    love.graphics.rectangle("fill", x + 2, y + 2, size - 4, size - 4, 3, 3)
-    withAlpha(1, 0.7, 0.2, 1, alpha)
-    love.graphics.rectangle("fill", x + size * 0.3, y + size * 0.25, size * 0.4, size * 0.5, 2, 2)
+    local s = size
+    withAlpha(0.42, 0.26, 0.12, 0.95, alpha)
+    love.graphics.setLineWidth(3)
+    love.graphics.line(cx - s * 0.28, cy + s * 0.18, cx + s * 0.28, cy + s * 0.18)
+    withAlpha(0.32, 0.18, 0.08, 0.95, alpha)
+    love.graphics.setLineWidth(2.5)
+    love.graphics.line(cx - s * 0.22, cy + s * 0.26, cx + s * 0.12, cy + s * 0.08)
+    love.graphics.line(cx + s * 0.22, cy + s * 0.26, cx - s * 0.12, cy + s * 0.08)
+    withAlpha(0.95, 0.28, 0.05, 0.95, alpha)
+    love.graphics.polygon(
+      "fill",
+      cx, cy - s * 0.34,
+      cx + s * 0.18, cy + s * 0.12,
+      cx + s * 0.08, cy + s * 0.06,
+      cx, cy + s * 0.16,
+      cx - s * 0.08, cy + s * 0.06,
+      cx - s * 0.18, cy + s * 0.12
+    )
+    withAlpha(1.00, 0.62, 0.10, 0.95, alpha)
+    love.graphics.polygon(
+      "fill",
+      cx, cy - s * 0.22,
+      cx + s * 0.10, cy + s * 0.08,
+      cx, cy + s * 0.10,
+      cx - s * 0.10, cy + s * 0.08
+    )
+    withAlpha(1.00, 0.92, 0.45, 0.95, alpha)
+    love.graphics.polygon(
+      "fill",
+      cx, cy - s * 0.10,
+      cx + s * 0.05, cy + s * 0.06,
+      cx - s * 0.05, cy + s * 0.06
+    )
   elseif tool == "ice" then
     withAlpha(1, 1, 1, 1, alpha)
     love.graphics.draw(
@@ -182,6 +235,142 @@ local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom)
     love.graphics.line(x + 6, y + 6, x + size - 6, y + size - 6)
     love.graphics.line(x + size - 6, y + 6, x + 6, y + size - 6)
   end
+end
+
+local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom)
+  drawToolVisual(tool, wallFacing, cx, cy, size, zoom, 0.5)
+end
+
+local function placeToolOnGrid(tool, col, row, grid, wallFacing)
+  if tool == "ground" then
+    grid:setGround(col, row)
+    grid:removeFire(col, row)
+    grid:removeIce(col, row)
+    grid:removeSnowflake(col, row)
+    grid:removeTea(col, row)
+    grid:removeWall(col, row)
+    grid:removeBoulder(col, row)
+  elseif tool == "fire" then
+    grid:addFire(col, row)
+  elseif tool == "ice" then
+    grid:addIce(col, row)
+  elseif tool == "snowflake" then
+    grid:addSnowflake(col, row)
+  elseif tool == "tea" then
+    grid:addTea(col, row)
+  elseif tool == "side_wall" then
+    grid:addWall(col, row, "side", wallFacing)
+  elseif tool == "front_wall" then
+    grid:addWall(col, row, "front")
+  elseif tool == "cracked_wall" then
+    grid:addWall(col, row, "front", nil, { cracked = true })
+  elseif tool == "boulder" then
+    grid:addBoulder(col, row)
+  elseif tool == "cracked_boulder" then
+    grid:addBoulder(col, row, { cracked = true })
+  elseif tool == "erase" then
+    grid:erase(col, row)
+  end
+end
+
+local function drawActionIcon(kind, size)
+  local pad = 4
+  local x, y = pad, pad
+  local w = size - pad * 2
+
+  if kind == "erase" then
+    love.graphics.setColor(0.95, 0.32, 0.36, 1)
+    love.graphics.setLineWidth(2.5)
+    love.graphics.line(x + 2, y + 2, x + w - 2, y + w - 2)
+    love.graphics.line(x + w - 2, y + 2, x + 2, y + w - 2)
+  elseif kind == "save" then
+    love.graphics.setColor(0.35, 0.72, 0.95, 1)
+    love.graphics.rectangle("fill", x, y, w, w, 2, 2)
+    love.graphics.setColor(0.12, 0.22, 0.34, 1)
+    love.graphics.rectangle("fill", x + 4, y + 2, w - 8, w * 0.35, 1, 1)
+    love.graphics.setColor(0.85, 0.93, 1, 1)
+    love.graphics.rectangle("fill", x + 5, y + w * 0.48, w - 10, w * 0.38, 1, 1)
+  elseif kind == "load" then
+    love.graphics.setColor(0.95, 0.78, 0.28, 1)
+    love.graphics.polygon(
+      "fill",
+      x, y + 5,
+      x + w * 0.38, y + 5,
+      x + w * 0.48, y,
+      x + w, y,
+      x + w, y + w,
+      x, y + w
+    )
+    love.graphics.setColor(0.72, 0.55, 0.12, 1)
+    love.graphics.setLineWidth(1)
+    love.graphics.polygon(
+      "line",
+      x, y + 5,
+      x + w * 0.38, y + 5,
+      x + w * 0.48, y,
+      x + w, y,
+      x + w, y + w,
+      x, y + w
+    )
+  end
+end
+
+local function iconCacheKey(toolName, wallFacing)
+  if toolName == "side_wall" then
+    return toolName .. ":" .. (wallFacing or "left")
+  end
+  return toolName
+end
+
+local function clearToolIcon(toolName)
+  for key, canvas in pairs(toolIconCache) do
+    if key == toolName or key:match("^" .. toolName .. ":") then
+      if canvas and canvas.release then
+        canvas:release()
+      end
+      toolIconCache[key] = nil
+    end
+  end
+end
+
+local function buildToolIcon(toolEntry, wallFacing)
+  local canvas = love.graphics.newCanvas(ICON_SIZE, ICON_SIZE)
+  canvas:setFilter("linear", "linear")
+
+  local prevCanvas = love.graphics.getCanvas()
+  local prevFont = love.graphics.getFont()
+
+  love.graphics.setCanvas(canvas)
+  love.graphics.clear(0.05, 0.10, 0.16, 1)
+
+  if toolEntry.icon == "tile" then
+    local tileSize = 40
+    local snap = Grid.new(tileSize, 1, 1, false)
+    placeToolOnGrid(toolEntry.name, 1, 1, snap, wallFacing or "left")
+    love.graphics.push()
+    love.graphics.scale(ICON_SIZE / tileSize, ICON_SIZE / tileSize)
+    snap:draw(1)
+    love.graphics.pop()
+  else
+    drawActionIcon(toolEntry.icon or toolEntry.name, ICON_SIZE)
+  end
+
+  love.graphics.setCanvas(prevCanvas)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setLineWidth(1)
+  if prevFont then
+    love.graphics.setFont(prevFont)
+  end
+
+  return canvas
+end
+
+local function ensureToolIcon(toolEntry, wallFacing)
+  local key = iconCacheKey(toolEntry.name, wallFacing)
+  if not toolIconCache[key] then
+    toolIconCache[key] = buildToolIcon(toolEntry, wallFacing)
+  end
+  return toolIconCache[key]
 end
 
 local function sourceLevelsDir()
@@ -559,35 +748,7 @@ function Editor:applyTool(tool, col, row, grid)
     return
   end
 
-  if tool == "ground" then
-    grid:setGround(col, row)
-    grid:removeFire(col, row)
-    grid:removeIce(col, row)
-    grid:removeSnowflake(col, row)
-    grid:removeTea(col, row)
-    grid:removeWall(col, row)
-    grid:removeBoulder(col, row)
-  elseif tool == "fire" then
-    grid:addFire(col, row)
-  elseif tool == "ice" then
-    grid:addIce(col, row)
-  elseif tool == "snowflake" then
-    grid:addSnowflake(col, row)
-  elseif tool == "tea" then
-    grid:addTea(col, row)
-  elseif tool == "side_wall" then
-    grid:addWall(col, row, "side", self.wallFacing)
-  elseif tool == "front_wall" then
-    grid:addWall(col, row, "front")
-  elseif tool == "cracked_wall" then
-    grid:addWall(col, row, "front", nil, { cracked = true })
-  elseif tool == "boulder" then
-    grid:addBoulder(col, row)
-  elseif tool == "cracked_boulder" then
-    grid:addBoulder(col, row, { cracked = true })
-  elseif tool == "erase" then
-    grid:erase(col, row)
-  end
+  placeToolOnGrid(tool, col, row, grid, self.wallFacing)
 end
 
 function Editor:paintAt(x, y, button, grid, camera)
@@ -711,59 +872,19 @@ function Editor:mousepressed(x, y, button, grid, camera)
 
     local toolButton = self:hitToolButton(x, y)
 
-    if toolButton == 1 then
-      self.loadDropdownOpen = false
-      self.tool = "ground"
-      return
+    if toolButton then
+      local entry = TOOLS[toolButton]
 
-    elseif toolButton == 2 then
-      self.loadDropdownOpen = false
-      self.tool = "fire"
-      return
+      if entry.name == "save" then
+        self.loadDropdownOpen = false
+        self:beginSave()
+      elseif entry.name == "load" then
+        self:toggleLoadDropdown()
+      else
+        self.loadDropdownOpen = false
+        self.tool = entry.name
+      end
 
-    elseif toolButton == 3 then
-      self.loadDropdownOpen = false
-      self.tool = "ice"
-      return
-
-    elseif toolButton == 4 then
-      self.loadDropdownOpen = false
-      self.tool = "snowflake"
-      return
-
-    elseif toolButton == 5 then
-      self.loadDropdownOpen = false
-      self.tool = "tea"
-      return
-    elseif toolButton == 6 then
-      self.loadDropdownOpen = false
-      self.tool = "side_wall"
-      return
-    elseif toolButton == 7 then
-      self.loadDropdownOpen = false
-      self.tool = "front_wall"
-      return
-    elseif toolButton == 8 then
-      self.loadDropdownOpen = false
-      self.tool = "cracked_wall"
-      return
-    elseif toolButton == 9 then
-      self.loadDropdownOpen = false
-      self.tool = "boulder"
-      return
-    elseif toolButton == 10 then
-      self.loadDropdownOpen = false
-      self.tool = "cracked_boulder"
-      return
-    elseif toolButton == 11 then
-      self.loadDropdownOpen = false
-      self.tool = "erase"
-      return
-    elseif toolButton == 12 then
-      self:beginSave()
-      return
-    elseif toolButton == 13 then
-      self:toggleLoadDropdown()
       return
     end
 
@@ -914,6 +1035,7 @@ function Editor:keypressed(key, grid)
 
   elseif key == "r" then
     self.wallFacing = self.wallFacing == "left" and "right" or "left"
+    clearToolIcon("side_wall")
     self.loadDropdownOpen = false
     self:setStatus("Side wall facing: " .. self.wallFacing)
 
@@ -1135,25 +1257,12 @@ function Editor:draw(grid, camera)
     (BUTTON_H - font:getHeight()) * 0.5
   )
 
-  local tools = {
-    { name = "ground", label = "Ground" },
-    { name = "fire", label = "Fire" },
-    { name = "ice", label = "Ice Floor" },
-    { name = "snowflake", label = "Snowflake" },
-    { name = "tea", label = "Iced Tea Goal" },
-    { name = "side_wall", label = "Side Wall" },
-    { name = "front_wall", label = "Front Wall" },
-    { name = "cracked_wall", label = "Cracked Wall" },
-    { name = "boulder", label = "Boulder" },
-    { name = "cracked_boulder", label = "Cracked Boulder" },
-    { name = "erase", label = "Erase" },
-    { name = "save", label = "Save" },
-    { name = "load", label = "Load" },
-  }
-
-  for index, tool in ipairs(tools) do
+  for index, tool in ipairs(TOOLS) do
     local y = buttonY(index)
-    if self.tool == tool.name or (tool.name == "load" and self.loadDropdownOpen) then
+    local selected = self.tool == tool.name
+      or (tool.name == "load" and self.loadDropdownOpen)
+
+    if selected then
       if tool.name == "snowflake" then
         love.graphics.setColor(0.20, 0.55, 0.90, 0.9)
       elseif tool.name == "side_wall" then
@@ -1170,12 +1279,7 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.18, 0.58, 0.86, 0.8)
       end
     else
-      love.graphics.setColor(
-        0.10,
-        0.20,
-        0.31,
-        0.9
-      )
+      love.graphics.setColor(0.10, 0.20, 0.31, 0.9)
     end
 
     love.graphics.rectangle(
@@ -1188,10 +1292,27 @@ function Editor:draw(grid, camera)
       4
     )
 
+    local icon = ensureToolIcon(tool, self.wallFacing)
+    local iconX = BUTTON_X + ICON_PAD
+    local iconY = y + math.floor((BUTTON_H - ICON_SIZE) * 0.5)
+
+    love.graphics.setColor(0.04, 0.08, 0.12, 0.85)
+    love.graphics.rectangle(
+      "fill",
+      iconX - 1,
+      iconY - 1,
+      ICON_SIZE + 2,
+      ICON_SIZE + 2,
+      3,
+      3
+    )
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(icon, iconX, iconY)
+
     love.graphics.setColor(0.92, 0.97, 1)
     love.graphics.print(
       tool.label,
-      28,
+      iconX + ICON_SIZE + 8,
       y + textY
     )
   end
