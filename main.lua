@@ -1036,6 +1036,11 @@ function love.keypressed(key)
       end
     end
   elseif state == "play" then
+    if editor.active and editor.namingOpen then
+      editor:keypressed(key, grid)
+      return
+    end
+
     if key == "escape" then
       state = "menu"
       intro = 0
@@ -1064,6 +1069,12 @@ function love.keypressed(key)
     end
 
     player:keypressed(key, grid)
+  end
+end
+
+function love.textinput(text)
+  if state == "play" and editor and editor.active then
+    editor:textinput(text)
   end
 end
 
