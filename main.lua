@@ -196,6 +196,7 @@ local function buildLevelPreview(name)
   snap:removeIce(SPAWN_COL, SPAWN_ROW)
   snap:removeSnowflake(SPAWN_COL, SPAWN_ROW)
   snap:removeTea(SPAWN_COL, SPAWN_ROW)
+  snap:removeWall(SPAWN_COL, SPAWN_ROW)
   snap:addWater(SPAWN_COL, SPAWN_ROW)
 
   local worldW = snap.columns * snap.size
@@ -280,6 +281,7 @@ local function restartRun()
     grid:removeIce(SPAWN_COL, SPAWN_ROW)
     grid:removeSnowflake(SPAWN_COL, SPAWN_ROW)
     grid:removeTea(SPAWN_COL, SPAWN_ROW)
+    grid:removeWall(SPAWN_COL, SPAWN_ROW)
   end
   player = Player.new(SPAWN_COL, SPAWN_ROW)
   local cameraX, cameraY = grid:tileCenter(player.col, player.row)
