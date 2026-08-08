@@ -65,7 +65,7 @@ function Player:currentSpeedFactor()
   return 1
 end
 
-function Player:canSmashWall(grid)
+function Player:canSmash(grid)
   if grid:isIceTile(self.col, self.row) then
     return true
   end
@@ -76,7 +76,7 @@ function Player:trySmashWallAhead(grid, col, row)
   col, row = grid:clamp(col, row)
   if (col == self.col and row == self.row)
     or not grid:isCrackedWall(col, row)
-    or not self:canSmashWall(grid)
+    or not self:canSmash(grid)
     or not grid:hasGround(col, row)
     or self.dead
     or self.won then
@@ -87,6 +87,20 @@ function Player:trySmashWallAhead(grid, col, row)
     return false
   end
   return grid:breakWall(col, row)
+end
+
+-- Cracked boulders smash under the same speed/ice rules, but the cube stops
+-- on impact instead of continuing onto the cleared tile.
+function Player:trySmashBoulderAhead(grid, col, row)
+  col, row = grid:clamp(col, row)
+  if (col == self.col and row == self.row)
+    or not grid:isCrackedBoulder(col, row)
+    or not self:canSmash(grid)
+    or self.dead
+    or self.won then
+    return false
+  end
+  return grid:breakBoulder(col, row)
 end
 
 function Player:canStepTo(grid, col, row)
@@ -146,6 +160,10 @@ function Player:continueSlide(grid)
 
   local nextCol = self.col + slide.dx
   local nextRow = self.row + slide.dy
+  if self:trySmashBoulderAhead(grid, nextCol, nextRow) then
+    self:stopSlide()
+    return
+  end
   self:trySmashWallAhead(grid, nextCol, nextRow)
   local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
   if not ok then
@@ -209,6 +227,10 @@ function Player:keypressed(key, grid)
   end
 
   local nextCol, nextRow = self.col + dx, self.row + dy
+  if self:trySmashBoulderAhead(grid, nextCol, nextRow) then
+    self:stopSlide()
+    return
+  end
   self:trySmashWallAhead(grid, nextCol, nextRow)
   local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
   if not ok then
