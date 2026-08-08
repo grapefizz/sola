@@ -36,7 +36,7 @@ local CARD_H = 280
 local CARD_GAP_X = 28
 local CARD_GAP_Y = 22
 local PREVIEW_PAD = 14
-local MAP_COLS, MAP_ROWS = 20, 15
+local MAP_COLS, MAP_ROWS = 256, 256
 local TITLE_AREA = 68
 local FOOTER_AREA = 44
 
@@ -127,7 +127,8 @@ local musicVol = 0.55
 local sfxVol = 0.8
 
 -- gameplay from game/ (water trails, fire, editor) — modules untouched
-local SPAWN_COL, SPAWN_ROW = 10, 8
+local SPAWN_COL = math.ceil(MAP_COLS / 2)
+local SPAWN_ROW = math.ceil(MAP_ROWS / 2)
 local grid, player, camera, editor
 
 local function loadProgress()
@@ -286,14 +287,14 @@ local function restartRun()
 end
 
 local function startPlay(openEditor, levelName)
-  grid = Grid.new(40, 20, 15)
+  grid = Grid.new(40, MAP_COLS, MAP_ROWS, not openEditor)
   editor = Editor.new(SPAWN_COL, SPAWN_ROW)
   currentLevelName = nil
 
   if openEditor then
-    grid:addFire(13, 8)
-    restartRun()
-    grid:clearWater()
+    player = Player.new(SPAWN_COL, SPAWN_ROW)
+    local cameraX, cameraY = grid:tileCenter(SPAWN_COL, SPAWN_ROW)
+    camera = Camera.new(cameraX, cameraY, 2)
     editor:setActive(true)
     love.window.setTitle("Ice Cube — Level Editor")
     return
@@ -304,7 +305,7 @@ local function startPlay(openEditor, levelName)
     currentLevelName = levelName
     editor:loadLevel(grid, levelName)
   else
-    grid:addFire(13, 8)
+    grid:addFire(SPAWN_COL + 3, SPAWN_ROW)
   end
   restartRun()
   love.window.setTitle(levelName and ("Ice Cube — " .. prettyLevelName(levelName)) or "Ice Cube — Play")
@@ -1404,7 +1405,7 @@ function love.draw()
     love.graphics.clear(0.04, 0.08, 0.16)
 
     camera:attach()
-    grid:draw(camera.zoom)
+    grid:draw(camera.zoom, camera)
     camera:detach()
 
     if editor.active then

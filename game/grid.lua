@@ -266,9 +266,29 @@ end
 
 
 
-function Grid:draw(zoom)
+function Grid:draw(zoom, camera)
   local width = self.columns * self.size
   local height = self.rows * self.size
+  local minCol, maxCol = 1, self.columns
+  local minRow, maxRow = 1, self.rows
+
+  if camera then
+    local screenWidth, screenHeight = love.graphics.getDimensions()
+    local halfWidth = screenWidth / (camera.zoom * 2)
+    local halfHeight = screenHeight / (camera.zoom * 2)
+    minCol = math.max(1, math.floor((camera.x - halfWidth) / self.size) + 1)
+    maxCol = math.min(self.columns, math.floor((camera.x + halfWidth) / self.size) + 1)
+    minRow = math.max(1, math.floor((camera.y - halfHeight) / self.size) + 1)
+    maxRow = math.min(self.rows, math.floor((camera.y + halfHeight) / self.size) + 1)
+  end
+
+  local function isVisible(tile, padding)
+    padding = padding or 0
+    return tile.col >= minCol - padding
+      and tile.col <= maxCol + padding
+      and tile.row >= minRow - padding
+      and tile.row <= maxRow + padding
+  end
 
 
 
@@ -277,14 +297,23 @@ function Grid:draw(zoom)
 
 
 
-  for _, tile in pairs(self.groundTiles) do
-    local x = (tile.col - 1) * self.size
-    local y = (tile.row - 1) * self.size
-    love.graphics.setColor(0.06, 0.16, 0.27)
-    love.graphics.rectangle("fill", x + 1, y + 1, self.size - 2, self.size - 2)
+  love.graphics.setColor(0.06, 0.16, 0.27)
+  for row = minRow, maxRow do
+    local runStart = nil
+    for col = minCol, maxCol + 1 do
+      if col <= maxCol and self:hasGround(col, row) then
+        runStart = runStart or col
+      elseif runStart then
+        local x = (runStart - 1) * self.size
+        local y = (row - 1) * self.size
+        love.graphics.rectangle("fill", x + 1, y + 1, (col - runStart) * self.size - 2, self.size - 2)
+        runStart = nil
+      end
+    end
   end
 
   for _, ice in pairs(self.iceTiles) do
+    if isVisible(ice) then
     local x = (ice.col - 1) * self.size
     local y = (ice.row - 1) * self.size
     love.graphics.setColor(0.55, 0.82, 0.98, 0.55)
@@ -295,9 +324,11 @@ function Grid:draw(zoom)
     love.graphics.line(x + 12, y + 8, x + self.size - 10, y + self.size - 14)
     love.graphics.setColor(1, 1, 1, 0.45)
     love.graphics.circle("fill", x + 11, y + 11, 2)
+    end
   end
 
   for _, fire in pairs(self.fireTiles) do
+    if isVisible(fire, self.fireRadius) then
     love.graphics.setColor(0.65, 0.20, 0.06, 0.24)
     for row = fire.row - self.fireRadius, fire.row + self.fireRadius do
       for col = fire.col - self.fireRadius, fire.col + self.fireRadius do
@@ -308,26 +339,32 @@ function Grid:draw(zoom)
         end
       end
     end
+    end
   end
 
   for _, snowflake in pairs(self.snowflakeTiles) do
+    if isVisible(snowflake) then
     local x = (snowflake.col - 1) * self.size
     local y = (snowflake.row - 1) * self.size
     love.graphics.setColor(0.08, 0.24, 0.42, 0.30)
     love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
+    end
   end
 
   love.graphics.setLineWidth(1 / zoom)
   for _, tile in pairs(self.waterTiles) do
+    if isVisible(tile) then
     local x = (tile.col - 1) * self.size
     local y = (tile.row - 1) * self.size
     love.graphics.setColor(0.10, 0.48, 0.72, 0.75)
     love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
     love.graphics.setColor(0.40, 0.78, 0.95, 0.65)
     love.graphics.line(x + 8, y + 13, x + self.size - 8, y + 13)
+    end
   end
 
   for _, snowflake in pairs(self.snowflakeTiles) do
+    if isVisible(snowflake) then
     local centerX, centerY = self:tileCenter(snowflake.col, snowflake.row)
     local halfWidth = self.size * 0.35
     local halfHeight = self.size * 0.25
@@ -347,14 +384,15 @@ function Grid:draw(zoom)
       centerX, centerY + halfHeight * 0.5,
       centerX - halfWidth * 0.5, centerY
     )
+    end
   end
 
   love.graphics.setColor(0.13, 0.32, 0.47)
-  for col = 0, self.columns do
+  for col = minCol - 1, maxCol do
     local x = col * self.size
     love.graphics.line(x, 0, x, height)
   end
-  for row = 0, self.rows do
+  for row = minRow - 1, maxRow do
     local y = row * self.size
     love.graphics.line(0, y, width, y)
   end
@@ -362,6 +400,7 @@ function Grid:draw(zoom)
 
 
   for _, fire in pairs(self.fireTiles) do
+    if isVisible(fire) then
     local centerX, centerY = self:tileCenter(fire.col, fire.row)
     love.graphics.setColor(0.95, 0.24, 0.04)
     love.graphics.polygon(
@@ -377,10 +416,10 @@ function Grid:draw(zoom)
       centerX + 6, centerY + 10,
       centerX - 6, centerY + 10
     )
+    end
   end
 end
 
 
 
 return Grid
-

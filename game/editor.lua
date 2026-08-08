@@ -14,8 +14,13 @@ local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
+local LEGEND_H = 72
 
 local hudFont
+
+local function controlIsDown()
+  return love.keyboard.isDown("lctrl", "rctrl")
+end
 
 local function getHudFont()
   if not hudFont then
@@ -290,6 +295,10 @@ function Editor:isOverHud(x, y)
   end
 
   if self:isOverDropdown(x, y) then
+    return true
+  end
+  local _, height = love.graphics.getDimensions()
+  if y >= height - LEGEND_H then
     return true
   end
   return x >= HUD_X
@@ -598,7 +607,9 @@ end
 
 function Editor:keypressed(key, grid)
   if self.namingOpen then
-    if key == "return" or key == "kpenter" then
+    if (key == "s" and controlIsDown())
+      or key == "return"
+      or key == "kpenter" then
       self:confirmSave(grid)
 
     elseif key == "escape" then
@@ -648,11 +659,11 @@ function Editor:keypressed(key, grid)
     self.tool = "erase"
     self.loadDropdownOpen = false
 
-  elseif key == "c" then
+  elseif key == "c" or key == "n" then
     grid:clear()
-    self:protectSpawn(grid)
     self.loadDropdownOpen = false
-    self:setStatus("Level cleared")
+    self.currentLevelName = nil
+    self:setStatus("New blank level")
 
   elseif key == "f" then
     for row = 1, grid.rows do
@@ -664,7 +675,7 @@ function Editor:keypressed(key, grid)
     self.loadDropdownOpen = false
     self:setStatus("Ground filled")
 
-  elseif key == "s" then
+  elseif key == "s" and controlIsDown() then
     self:beginSave()
 
   elseif key == "l" then
@@ -729,7 +740,7 @@ function Editor:update(dt, grid, camera)
     dy = dy - 1
   end
 
-  if love.keyboard.isDown("down") then
+  if love.keyboard.isDown("down", "s") then
     dy = dy + 1
   end
 
@@ -1049,6 +1060,37 @@ function Editor:draw(grid, camera)
     love.graphics.setColor(0.85, 0.93, 1)
     love.graphics.print(self.status, 18, statusY + textY)
   end
+
+  local screenWidth, screenHeight = love.graphics.getDimensions()
+  local legendY = screenHeight - LEGEND_H
+  love.graphics.setColor(0.025, 0.05, 0.09, 0.96)
+  love.graphics.rectangle("fill", 0, legendY, screenWidth, LEGEND_H)
+  love.graphics.setColor(0.18, 0.58, 0.86, 0.75)
+  love.graphics.setLineWidth(1)
+  love.graphics.line(0, legendY, screenWidth, legendY)
+  love.graphics.setColor(0.85, 0.93, 1)
+  love.graphics.printf(
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Erase",
+    12,
+    legendY + 7,
+    screenWidth - 24,
+    "center"
+  )
+  love.graphics.setColor(0.58, 0.75, 0.9)
+  love.graphics.printf(
+    "Left-drag Paint  ·  Right-drag Erase  ·  Ctrl+S Save  ·  L Load  ·  N/C New Blank  ·  F Fill Ground",
+    12,
+    legendY + 27,
+    screenWidth - 24,
+    "center"
+  )
+  love.graphics.printf(
+    "WASD/Arrows Pan  ·  Mouse Wheel Zoom  ·  E Play/Edit  ·  Esc Menu",
+    12,
+    legendY + 47,
+    screenWidth - 24,
+    "center"
+  )
 
   if self.namingOpen then
     local nx, ny, nw, nh = self:getNamingRect()
