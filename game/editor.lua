@@ -142,6 +142,14 @@ local function nextDefaultName(existing)
   return "level" .. n
 end
 
+function Editor.listLevelNames()
+  return listLevelNames()
+end
+
+function Editor.readLevelContents(name)
+  return readLevelFile(levelPath(name))
+end
+
 function Editor.new(spawnCol, spawnRow)
   return setmetatable({
     active = false,
