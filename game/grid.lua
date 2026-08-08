@@ -340,10 +340,11 @@ function Grid:isCrackedWall(col, row)
   return wall ~= nil and wall.cracked == true
 end
 
-function Grid:addBoulder(col, row)
+function Grid:addBoulder(col, row, options)
   if not self:isInside(col, row) then
     return
   end
+  options = options or {}
   self:setGround(col, row)
   local key = self:key(col, row)
   self.waterTiles[key] = nil
@@ -352,15 +353,34 @@ function Grid:addBoulder(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.wallTiles[key] = nil
-  self.boulderTiles[key] = { col = col, row = row }
+  self.boulderTiles[key] = {
+    col = col,
+    row = row,
+    cracked = options.cracked and true or false,
+  }
 end
 
 function Grid:removeBoulder(col, row)
   self.boulderTiles[self:key(col, row)] = nil
 end
 
+function Grid:breakBoulder(col, row)
+  local key = self:key(col, row)
+  local boulder = self.boulderTiles[key]
+  if not boulder or not boulder.cracked then
+    return false
+  end
+  self.boulderTiles[key] = nil
+  return true
+end
+
 function Grid:isBoulderTile(col, row)
   return self.boulderTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:isCrackedBoulder(col, row)
+  local boulder = self.boulderTiles[self:key(col, row)]
+  return boulder ~= nil and boulder.cracked == true
 end
 
 function Grid:isBlocking(col, row)
@@ -496,13 +516,15 @@ function Grid:serialize()
       elseif self:isTeaTile(col, row) then
         cells[col] = "T"
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
-        cells[col] = "O"
+        local boulder = self.boulderTiles[self:key(col, row)]
+        cells[col] = boulder.cracked and "Q" or "O"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
         cells[col] = "S"
       elseif self:isBoulderTile(col, row) then
-        cells[col] = "B"
+        local boulder = self.boulderTiles[self:key(col, row)]
+        cells[col] = boulder.cracked and "P" or "B"
       elseif self:isWallTile(col, row) then
         local wall = self.wallTiles[self:key(col, row)]
         local lean = wall.lean or "left"
@@ -546,12 +568,17 @@ function Grid:load(serialized)
       elseif cell == "O" then
         self:addIce(col, row)
         self:addBoulder(col, row)
+      elseif cell == "Q" then
+        self:addIce(col, row)
+        self:addBoulder(col, row, { cracked = true })
       elseif cell == "S" then
         self:addSnowflake(col, row)
       elseif cell == "T" then
         self:addTea(col, row)
       elseif cell == "B" then
         self:addBoulder(col, row)
+      elseif cell == "P" then
+        self:addBoulder(col, row, { cracked = true })
       elseif cell == "W" then
         self:addWall(col, row, "front", nil, { silent = true })
       elseif cell == "X" then
@@ -885,7 +912,11 @@ function Grid:draw(zoom, camera)
       local x = (boulder.col - 1) * self.size + pad
       local y = (boulder.row - 1) * self.size + pad
       local size = self.size - pad * 2
-      love.graphics.setColor(0.42, 0.40, 0.38, 0.98)
+      if boulder.cracked then
+        love.graphics.setColor(0.36, 0.34, 0.32, 0.98)
+      else
+        love.graphics.setColor(0.42, 0.40, 0.38, 0.98)
+      end
       love.graphics.rectangle("fill", x, y, size, size, 5, 5)
       love.graphics.setColor(0.62, 0.60, 0.56, 0.9)
       love.graphics.setLineWidth(1.5 / zoom)
@@ -893,6 +924,23 @@ function Grid:draw(zoom, camera)
       love.graphics.setColor(0.28, 0.26, 0.24, 0.55)
       love.graphics.line(x + size * 0.28, y + size * 0.22, x + size * 0.55, y + size * 0.7)
       love.graphics.line(x + size * 0.6, y + size * 0.3, x + size * 0.78, y + size * 0.62)
+      if boulder.cracked then
+        love.graphics.setColor(0.12, 0.10, 0.08, 0.95)
+        love.graphics.setLineWidth(2 / zoom)
+        love.graphics.line(
+          x + size * 0.2, y + size * 0.15,
+          x + size * 0.45, y + size * 0.48,
+          x + size * 0.22, y + size * 0.85
+        )
+        love.graphics.line(
+          x + size * 0.45, y + size * 0.48,
+          x + size * 0.82, y + size * 0.35
+        )
+        love.graphics.line(
+          x + size * 0.42, y + size * 0.55,
+          x + size * 0.78, y + size * 0.8
+        )
+      end
     end
   end
 
