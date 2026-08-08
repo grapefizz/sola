@@ -189,12 +189,12 @@ local function buildLevelPreview(name)
   local pw = math.max(64, CARD_W - PREVIEW_PAD * 2)
   local ph = math.max(48, math.floor(pw * MAP_ROWS / MAP_COLS))
 
-  -- load the real level into a throwaway grid and snapshot its draw
   local snap = Grid.new(40, MAP_COLS, MAP_ROWS, false)
   local contents = Editor.readLevelContents(name)
   if contents then
     snap:load(contents)
   end
+
   snap:setGround(SPAWN_COL, SPAWN_ROW)
   snap:removeFire(SPAWN_COL, SPAWN_ROW)
   snap:removeIce(SPAWN_COL, SPAWN_ROW)
@@ -203,11 +203,28 @@ local function buildLevelPreview(name)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
   snap:addWater(SPAWN_COL, SPAWN_ROW)
 
-  local worldW = snap.columns * snap.size
-  local worldH = snap.rows * snap.size
-  local scale = math.min(pw / worldW, ph / worldH)
-  local ox = (pw - worldW * scale) * 0.5
-  local oy = (ph - worldH * scale) * 0.5
+  local PREVIEW_TILES = 50
+  local halfTiles = PREVIEW_TILES / 2
+
+  local centerCol = SPAWN_COL
+  local centerRow = SPAWN_ROW
+
+  centerCol = math.max(halfTiles + 1,
+    math.min(snap.columns - halfTiles, centerCol))
+
+  centerRow = math.max(halfTiles + 1,
+    math.min(snap.rows - halfTiles, centerRow))
+
+  local viewWorldW = PREVIEW_TILES * snap.size
+  local viewWorldH = PREVIEW_TILES * snap.size
+
+  local scale = math.min(pw / viewWorldW, ph / viewWorldH)
+
+  local ox = (pw - viewWorldW * scale) * 0.5
+  local oy = (ph - viewWorldH * scale) * 0.5
+
+  local centerWorldX = (centerCol - 0.5) * snap.size
+  local centerWorldY = (centerRow - 0.5) * snap.size
 
   local canvas = love.graphics.newCanvas(pw, ph)
   canvas:setFilter("linear", "linear")
@@ -217,19 +234,48 @@ local function buildLevelPreview(name)
   love.graphics.clear(0.04, 0.08, 0.16, 1)
 
   love.graphics.push()
-  love.graphics.translate(ox, oy)
-  love.graphics.scale(scale, scale)
-  snap:draw(1)
 
-  -- Spawn ice cube sprite (matches the in-game player).
+  love.graphics.translate(
+    pw * 0.5 - centerWorldX * scale,
+    ph * 0.5 - centerWorldY * scale
+  )
+
+  love.graphics.scale(scale, scale)
+
+  snap:draw(1, nil, false)
+
   local cx, cy = snap:tileCenter(SPAWN_COL, SPAWN_ROW)
   local size = 26
-  Player.drawSprite(cx, cy, size, 0)
+
+  love.graphics.setColor(0.66, 0.92, 1)
+  love.graphics.rectangle(
+    "fill",
+    cx - size * 0.5,
+    cy - size * 0.5,
+    size,
+    size,
+    6,
+    6
+  )
+
+  love.graphics.setColor(0.18, 0.58, 0.86)
+  love.graphics.setLineWidth(2)
+  love.graphics.rectangle(
+    "line",
+    cx - size * 0.5,
+    cy - size * 0.5,
+    size,
+    size,
+    6,
+    6
+  )
+
   love.graphics.pop()
 
   love.graphics.setCanvas(prevCanvas)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setLineWidth(1)
+
   return canvas
 end
 
