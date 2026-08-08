@@ -1,6 +1,8 @@
 local Player = {}
 Player.__index = Player
 
+local Perspective = require "game.perspective"
+
 local MOVE_DURATION = 0.14
 local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 -- 25% faster on ice
 -- Cracked walls break when approaching at least this much faster than a normal step.
@@ -29,12 +31,46 @@ local function getPlayerAnimation()
   return playerAnimation
 end
 
-function Player.drawSprite(x, y, size, time)
+function Player.drawSprite(x, y, size, time, mode)
   local animation = getPlayerAnimation()
   time = time or ((love.timer and love.timer.getTime()) or 0)
   local frameIndex = math.floor(time / PLAYER_FRAME_DURATION) % PLAYER_FRAME_COUNT + 1
-  local scale = size / PLAYER_FRAME_SIZE
+  mode = mode or Perspective.mode
 
+  if mode == "side" then
+    -- Stand the ice-cube sprite on the floor with a tiny depth cue.
+    local body = size
+    local depth = size * 0.16
+    local right = x + body * 0.42
+    local top = y - body
+    local bottom = y
+
+    love.graphics.setColor(0.42, 0.70, 0.90, 0.55)
+    love.graphics.polygon(
+      "fill",
+      right, top + 4,
+      right + depth, top - depth * 0.35,
+      right + depth, bottom - depth * 0.35,
+      right, bottom - 2
+    )
+
+    local scale = body / PLAYER_FRAME_SIZE
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(
+      animation.image,
+      animation.frames[frameIndex],
+      x,
+      y,
+      0,
+      scale,
+      scale,
+      PLAYER_FRAME_SIZE / 2,
+      PLAYER_FRAME_SIZE
+    )
+    return
+  end
+
+  local scale = size / PLAYER_FRAME_SIZE
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.draw(
     animation.image,
@@ -148,9 +184,10 @@ end
 
 function Player:canStepTo(grid, col, row)
   col, row = grid:clamp(col, row)
+  local sizeRatio = self.maxMoves > 0 and (self.movesRemaining / self.maxMoves) or 0
   if (col == self.col and row == self.row)
     or not grid:hasGround(col, row)
-    or grid:isBlocking(col, row) then
+    or grid:isBlocking(col, row, sizeRatio) then
     return false
   end
   if self.dead or self.won then
@@ -325,7 +362,7 @@ function Player:draw(grid, camera)
   local worldX, worldY = grid:tileCenter(col, row)
   local x, y = camera:worldToScreen(worldX, worldY)
   local screenSize = size * camera.zoom
-  Player.drawSprite(x, y, screenSize)
+  Player.drawSprite(x, y, screenSize, nil, Perspective.mode)
 end
 
 

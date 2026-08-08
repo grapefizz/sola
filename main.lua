@@ -8,6 +8,7 @@ local Camera = require "game.camera"
 local Editor = require "game.editor"
 local Grid = require "game.grid"
 local Player = require "game.player"
+local Perspective = require "game.perspective"
 
 local state = "menu" -- menu | levels | credits | settings | play
 local elapsed = 0
@@ -203,11 +204,22 @@ local function buildLevelPreview(name)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
   snap:addWater(SPAWN_COL, SPAWN_ROW)
 
-  local worldW = snap.columns * snap.size
-  local worldH = snap.rows * snap.size
+  local worldW, worldH = snap:worldBounds()
   local scale = math.min(pw / worldW, ph / worldH)
   local ox = (pw - worldW * scale) * 0.5
   local oy = (ph - worldH * scale) * 0.5
+
+  -- Frame the occupied region instead of the huge void.
+  local minCol, maxCol, minRow, maxRow = snap:occupiedBounds(3)
+  local x0 = (minCol - 1) * snap.size
+  local y0 = (minRow - 1) * snap.size
+  local x1 = maxCol * snap.size
+  local y1 = maxRow * snap.size
+  local contentW = math.max(snap.size, x1 - x0)
+  local contentH = math.max(snap.size, y1 - y0)
+  scale = math.min(pw / contentW, ph / contentH) * 0.92
+  ox = (pw - contentW * scale) * 0.5 - x0 * scale
+  oy = (ph - contentH * scale) * 0.5 - y0 * scale
 
   local canvas = love.graphics.newCanvas(pw, ph)
   canvas:setFilter("linear", "linear")
@@ -223,8 +235,8 @@ local function buildLevelPreview(name)
 
   -- Spawn ice cube sprite (matches the in-game player).
   local cx, cy = snap:tileCenter(SPAWN_COL, SPAWN_ROW)
-  local size = 26
-  Player.drawSprite(cx, cy, size, 0)
+  local size = Perspective.isSide() and 30 or 26
+  Player.drawSprite(cx, cy, size, 0, Perspective.mode)
   love.graphics.pop()
 
   love.graphics.setCanvas(prevCanvas)
@@ -731,6 +743,63 @@ local function levelsGridMetrics(width, height)
   return gridX, gridY, gridW, gridH
 end
 
+local function perspectiveButtonRect(width, height)
+  local bw, bh = 148, 34
+  local x = width - bw - 18
+  local y = 18
+  return x, y, bw, bh
+end
+
+local function perspectiveButtonHit(mx, my, width, height)
+  local x, y, w, h = perspectiveButtonRect(width, height)
+  if mx >= x and mx <= x + w and my >= y and my <= y + h then
+    return true
+  end
+  return false
+end
+
+local function togglePerspectiveView()
+  Perspective.toggle()
+  clearLevelPreviews()
+  playSfx(sfxToggle)
+  bumpShake(2.5, 0.12)
+end
+
+local function drawPerspectiveButton(width, height, alpha)
+  alpha = alpha or 1
+  local x, y, w, h = perspectiveButtonRect(width, height)
+  local hover = perspectiveButtonHit(mouseX, mouseY, width, height)
+  local side = Perspective.isSide()
+
+  love.graphics.setColor(0.05, 0.12, 0.22, 0.82 * alpha)
+  love.graphics.rectangle("fill", x, y, w, h, 6, 6)
+  if hover or side then
+    love.graphics.setColor(0.55, 0.82, 1.0, (hover and 0.85 or 0.55) * alpha)
+  else
+    love.graphics.setColor(0.35, 0.55, 0.72, 0.55 * alpha)
+  end
+  love.graphics.setLineWidth(2)
+  love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2, 5, 5)
+
+  -- Tiny glyph: plan square vs standing block.
+  local gx = x + 12
+  local gy = y + 8
+  if side then
+    love.graphics.setColor(0.78, 0.58, 0.42, alpha)
+    love.graphics.rectangle("fill", gx + 4, gy, 10, 18, 1, 1)
+    love.graphics.setColor(0.92, 0.78, 0.58, alpha)
+    love.graphics.rectangle("fill", gx + 4, gy, 10, 3, 1, 1)
+  else
+    love.graphics.setColor(0.35, 0.72, 0.95, alpha)
+    love.graphics.rectangle("fill", gx, gy + 4, 16, 12, 2, 2)
+  end
+
+  love.graphics.setFont(fonts.small)
+  local label = Perspective.shortLabel() .. " View"
+  love.graphics.setColor(0.92, 0.97, 1.0, alpha)
+  love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
+end
+
 local function levelCardRect(index, width, height)
   local localIndex = index - levelScroll * CARD_COLS
   if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
@@ -1235,9 +1304,10 @@ local function drawLevels(width, height)
 
   love.graphics.setFont(fonts.small)
   love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
-  local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
+  local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
+  drawPerspectiveButton(width, height, e)
   drawSnow()
 end
 
@@ -1486,6 +1556,8 @@ function love.keypressed(key)
       intro = 0
       love.window.setTitle("Ice Cube")
       playSfx(sfxClick)
+    elseif key == "v" then
+      togglePerspectiveView()
     elseif #levelList > 0 then
       if key == "left" or key == "a" then
         levelSelected = levelSelected - 1
@@ -1562,7 +1634,7 @@ function love.keypressed(key)
     end
   elseif state == "play" then
     if editor.active and editor.namingOpen then
-      editor:keypressed(key, grid)
+      editor:keypressed(key, grid, camera)
       return
     end
 
@@ -1588,7 +1660,20 @@ function love.keypressed(key)
     end
 
     if editor.active then
-      editor:keypressed(key, grid)
+      editor:keypressed(key, grid, camera)
+      return
+    end
+
+    if key == "v" then
+      local focusCol, focusRow = Perspective.worldToTile(camera.x, camera.y, grid.size)
+      Perspective.toggle()
+      if not grid:isInside(focusCol, focusRow) then
+        focusCol, focusRow = player.col, player.row
+      end
+      local cx, cy = grid:tileCenter(focusCol, focusRow)
+      cameraFollowX, cameraFollowY = cx, cy
+      camera.x, camera.y = cx, cy
+      playSfx(sfxToggle)
       return
     end
 
@@ -1633,6 +1718,10 @@ function love.mousepressed(x, y, button)
       bumpShake(5, 0.22)
     end
   elseif state == "levels" then
+    if perspectiveButtonHit(x, y, width, height) then
+      togglePerspectiveView()
+      return
+    end
     local hit = levelItemHit(x, y, width, height)
     if hit > 0 then
       levelSelected = hit

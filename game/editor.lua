@@ -2,6 +2,7 @@ local Editor = {}
 Editor.__index = Editor
 
 local Grid = require "game.grid"
+local Perspective = require "game.perspective"
 
 local LEVELS_DIR = "levels"
 local HUD_X, HUD_Y = 10, 10
@@ -16,7 +17,7 @@ local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
-local LEGEND_H = 92
+local LEGEND_H = 112
 
 -- Single source of truth: add a tile tool here (+ applyTool / grid draw)
 -- and its left-panel icon is snapshotted automatically.
@@ -28,10 +29,12 @@ local TOOLS = {
   { name = "tea", label = "Iced Tea Goal", icon = "tile" },
   { name = "side_wall", label = "Side Wall", icon = "tile" },
   { name = "front_wall", label = "Front Wall", icon = "tile" },
+  { name = "half_wall", label = "Half Wall", icon = "tile" },
   { name = "cracked_wall", label = "Cracked Wall", icon = "tile" },
   { name = "boulder", label = "Boulder", icon = "tile" },
   { name = "cracked_boulder", label = "Cracked Boulder", icon = "tile" },
   { name = "erase", label = "Erase", icon = "erase" },
+  { name = "perspective", label = "Perspective", icon = "perspective" },
   { name = "save", label = "Save", icon = "save" },
   { name = "load", label = "Load", icon = "load" },
 }
@@ -76,8 +79,10 @@ local function withAlpha(r, g, b, a, alpha)
   love.graphics.setColor(r, g, b, a * alpha)
 end
 
-local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha)
+local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfWallFill, wallDepth)
   alpha = alpha or 1
+  halfWallFill = halfWallFill or 0.5
+  wallDepth = wallDepth or "front"
   local x = cx - size / 2
   local y = cy - size / 2
   local sprites = getPreviewSprites()
@@ -157,6 +162,7 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha)
       cx - 7 * zoom, cy + 13 * zoom
     )
   elseif tool == "side_wall" then
+    -- Strip only — no brick / ground under it.
     local stripW = size * 0.5
     local stripX = wallFacing == "right" and (x + size - stripW) or x
     withAlpha(0.32, 0.48, 0.62, 0.95, alpha)
@@ -187,6 +193,28 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha)
         x + size - 9, y + size * 0.28
       )
     end
+    if wallDepth == "behind" then
+      local pad = math.max(8, math.floor(size * 0.18))
+      withAlpha(1, 1, 1, 1, alpha)
+      love.graphics.draw(
+        sprites.ground,
+        x + pad,
+        y + pad,
+        0,
+        (size - pad * 2) / sprites.ground:getWidth(),
+        (size - pad * 2) / sprites.ground:getHeight()
+      )
+    end
+  elseif tool == "half_wall" then
+    local fill = halfWallFill
+    local wallH = (size - 2) * fill
+    local wallY = y + size - 1 - wallH
+    -- Slab only — no brick / ground under or above it.
+    withAlpha(0.55, 0.38, 0.28, 0.95, alpha)
+    love.graphics.rectangle("fill", x + 1, wallY, size - 2, wallH, 2, 2)
+    withAlpha(0.78, 0.58, 0.42, 0.9, alpha)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", x + 1, wallY, size - 2, wallH, 2, 2)
   elseif tool == "boulder" or tool == "cracked_boulder" then
     local pad = size * 0.12
     local bx = x + pad
@@ -222,11 +250,16 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha)
   end
 end
 
-local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom)
-  drawToolVisual(tool, wallFacing, cx, cy, size, zoom, 0.5)
+local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom, halfWallFill, wallDepth)
+  drawToolVisual(tool, wallFacing, cx, cy, size, zoom, 0.5, halfWallFill, wallDepth)
 end
 
-local function placeToolOnGrid(tool, col, row, grid, wallFacing)
+local function isFrontWallTool(tool)
+  return tool == "front_wall" or tool == "half_wall" or tool == "cracked_wall"
+end
+
+local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, wallDepth)
+  wallDepth = wallDepth or "front"
   if tool == "ground" then
     grid:setGround(col, row)
     grid:removeFire(col, row)
@@ -246,9 +279,15 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing)
   elseif tool == "side_wall" then
     grid:addWall(col, row, "side", wallFacing)
   elseif tool == "front_wall" then
-    grid:addWall(col, row, "front")
+    grid:addWall(col, row, "front", nil, { depth = wallDepth })
+  elseif tool == "half_wall" then
+    grid:addWall(col, row, "front", nil, {
+      half = true,
+      fill = halfWallFill or 0.5,
+      depth = wallDepth,
+    })
   elseif tool == "cracked_wall" then
-    grid:addWall(col, row, "front", nil, { cracked = true })
+    grid:addWall(col, row, "front", nil, { cracked = true, depth = wallDepth })
   elseif tool == "boulder" then
     grid:addBoulder(col, row)
   elseif tool == "cracked_boulder" then
@@ -297,12 +336,27 @@ local function drawActionIcon(kind, size)
       x + w, y + w,
       x, y + w
     )
+  elseif kind == "perspective" then
+    -- Mini top-down square + side standing block.
+    love.graphics.setColor(0.35, 0.72, 0.95, 1)
+    love.graphics.rectangle("fill", x + 1, y + w * 0.55, w * 0.42, w * 0.35, 1, 1)
+    love.graphics.setColor(0.78, 0.58, 0.42, 1)
+    love.graphics.rectangle("fill", x + w * 0.52, y + 2, w * 0.38, w * 0.88, 1, 1)
+    love.graphics.setColor(0.92, 0.78, 0.58, 1)
+    love.graphics.rectangle("fill", x + w * 0.52, y + 2, w * 0.38, 3, 1, 1)
   end
 end
 
-local function iconCacheKey(toolName, wallFacing)
+local function iconCacheKey(toolName, wallFacing, halfWallFill, wallDepth)
   if toolName == "side_wall" then
     return toolName .. ":" .. (wallFacing or "left")
+  end
+  if toolName == "half_wall" then
+    local level = math.max(1, math.min(9, math.floor((halfWallFill or 0.5) * 10 + 0.5)))
+    return toolName .. ":" .. level .. ":" .. (wallDepth or "front")
+  end
+  if toolName == "front_wall" or toolName == "cracked_wall" then
+    return toolName .. ":" .. (wallDepth or "front")
   end
   return toolName
 end
@@ -318,7 +372,7 @@ local function clearToolIcon(toolName)
   end
 end
 
-local function buildToolIcon(toolEntry, wallFacing)
+local function buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
   local canvas = love.graphics.newCanvas(ICON_SIZE, ICON_SIZE)
   canvas:setFilter("linear", "linear")
 
@@ -348,11 +402,22 @@ local function buildToolIcon(toolEntry, wallFacing)
     else
       local tileSize = 40
       local snap = Grid.new(tileSize, 1, 1, false)
-      placeToolOnGrid(toolEntry.name, 1, 1, snap, wallFacing or "left")
+      placeToolOnGrid(
+        toolEntry.name,
+        1,
+        1,
+        snap,
+        wallFacing or "left",
+        halfWallFill or 0.5,
+        wallDepth or "front"
+      )
+      local prevMode = Perspective.mode
+      Perspective.set("topdown")
       love.graphics.push()
       love.graphics.scale(ICON_SIZE / tileSize, ICON_SIZE / tileSize)
       snap:draw(1)
       love.graphics.pop()
+      Perspective.set(prevMode)
     end
   else
     drawActionIcon(toolEntry.icon or toolEntry.name, ICON_SIZE)
@@ -368,10 +433,10 @@ local function buildToolIcon(toolEntry, wallFacing)
   return canvas
 end
 
-local function ensureToolIcon(toolEntry, wallFacing)
-  local key = iconCacheKey(toolEntry.name, wallFacing)
+local function ensureToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
+  local key = iconCacheKey(toolEntry.name, wallFacing, halfWallFill, wallDepth)
   if not toolIconCache[key] then
-    toolIconCache[key] = buildToolIcon(toolEntry, wallFacing)
+    toolIconCache[key] = buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
   end
   return toolIconCache[key]
 end
@@ -513,6 +578,8 @@ function Editor.new(spawnCol, spawnRow)
     active = false,
     tool = "ground",
     wallFacing = "left",
+    wallDepth = "front",
+    halfWallFill = 0.5,
     spawnCol = spawnCol,
     spawnRow = spawnRow,
     status = "",
@@ -659,14 +726,32 @@ end
 
 function Editor:getTileAt(x, y, grid, camera)
   local worldX, worldY = camera:screenToWorld(x, y)
-  local col = math.floor(worldX / grid.size) + 1
-  local row = math.floor(worldY / grid.size) + 1
+  local col, row = Perspective.worldToTile(worldX, worldY, grid.size)
 
   if not grid:isInside(col, row) then
     return nil, nil
   end
 
   return col, row
+end
+
+function Editor:togglePerspective(grid, camera)
+  local focusCol, focusRow
+  if camera and grid then
+    focusCol, focusRow = Perspective.worldToTile(camera.x, camera.y, grid.size)
+  end
+
+  local mode = Perspective.toggle()
+
+  if camera and grid then
+    if not focusCol or not grid:isInside(focusCol, focusRow) then
+      focusCol, focusRow = self.spawnCol, self.spawnRow
+    end
+    camera.x, camera.y = grid:tileCenter(focusCol, focusRow)
+  end
+
+  self:setStatus("Perspective: " .. Perspective.label() .. "  (V to toggle)")
+  return mode
 end
 
 function Editor:protectSpawn(grid)
@@ -751,7 +836,7 @@ function Editor:applyTool(tool, col, row, grid)
     return
   end
 
-  placeToolOnGrid(tool, col, row, grid, self.wallFacing)
+  placeToolOnGrid(tool, col, row, grid, self.wallFacing, self.halfWallFill, self.wallDepth)
 end
 
 function Editor:paintAt(x, y, button, grid, camera)
@@ -883,9 +968,28 @@ function Editor:mousepressed(x, y, button, grid, camera)
         self:beginSave()
       elseif entry.name == "load" then
         self:toggleLoadDropdown()
+      elseif entry.name == "perspective" then
+        self.loadDropdownOpen = false
+        self:togglePerspective(grid, camera)
       else
         self.loadDropdownOpen = false
         self.tool = entry.name
+        if entry.name == "side_wall" then
+          self:setStatus("Side wall · R flips Left/Right (now " .. self.wallFacing .. ")")
+        elseif entry.name == "front_wall" or entry.name == "cracked_wall" then
+          self:setStatus(
+            entry.label
+              .. " · R toggles In Front / Behind (now "
+              .. (self.wallDepth == "behind" and "Behind" or "In Front")
+              .. ")"
+          )
+        elseif entry.name == "half_wall" then
+          self:setStatus(
+            "Half wall "
+              .. math.floor(self.halfWallFill * 100 + 0.5)
+              .. "% · R = In Front/Behind · [ ] / Shift+Wheel resize"
+          )
+        end
       end
 
       return
@@ -964,7 +1068,7 @@ function Editor:textinput(text)
   self.namingText = nextText
 end
 
-function Editor:keypressed(key, grid)
+function Editor:keypressed(key, grid, camera)
   if self.namingOpen then
     if (key == "s" and controlIsDown())
       or key == "return"
@@ -1020,12 +1124,31 @@ function Editor:keypressed(key, grid)
   elseif key == "6" then
     self.tool = "side_wall"
     self.loadDropdownOpen = false
+    self:setStatus("Side wall · R flips Left/Right (now " .. self.wallFacing .. ")")
   elseif key == "7" then
     self.tool = "front_wall"
     self.loadDropdownOpen = false
+    self:setStatus(
+      "Front wall · R toggles In Front / Behind (now "
+        .. (self.wallDepth == "behind" and "Behind" or "In Front")
+        .. ")"
+    )
+  elseif key == "h" then
+    self.tool = "half_wall"
+    self.loadDropdownOpen = false
+    self:setStatus(
+      "Half wall "
+        .. math.floor(self.halfWallFill * 100 + 0.5)
+        .. "% · R = In Front/Behind · [ ] resize"
+    )
   elseif key == "8" then
     self.tool = "cracked_wall"
     self.loadDropdownOpen = false
+    self:setStatus(
+      "Cracked wall · R toggles In Front / Behind (now "
+        .. (self.wallDepth == "behind" and "Behind" or "In Front")
+        .. ")"
+    )
   elseif key == "9" then
     self.tool = "boulder"
     self.loadDropdownOpen = false
@@ -1036,11 +1159,44 @@ function Editor:keypressed(key, grid)
     self.tool = "erase"
     self.loadDropdownOpen = false
 
-  elseif key == "r" then
-    self.wallFacing = self.wallFacing == "left" and "right" or "left"
-    clearToolIcon("side_wall")
+  elseif key == "[" or key == "]" then
+    local delta = key == "]" and 0.1 or -0.1
+    self.halfWallFill = math.max(0.1, math.min(0.9, self.halfWallFill + delta))
+    self.halfWallFill = math.floor(self.halfWallFill * 10 + 0.5) / 10
+    clearToolIcon("half_wall")
+    self.tool = "half_wall"
     self.loadDropdownOpen = false
-    self:setStatus("Side wall facing: " .. self.wallFacing)
+    self:setStatus(
+      "Half wall fill: "
+        .. math.floor(self.halfWallFill * 100 + 0.5)
+        .. "% — cube must be "
+        .. math.floor((1 - self.halfWallFill) * 100 + 0.5)
+        .. "% size or smaller"
+    )
+
+  elseif key == "r" then
+    self.loadDropdownOpen = false
+    if self.tool == "side_wall" then
+      self.wallFacing = self.wallFacing == "left" and "right" or "left"
+      clearToolIcon("side_wall")
+      self:setStatus("Side wall facing: " .. self.wallFacing)
+    elseif isFrontWallTool(self.tool) then
+      self.wallDepth = self.wallDepth == "behind" and "front" or "behind"
+      clearToolIcon("front_wall")
+      clearToolIcon("half_wall")
+      clearToolIcon("cracked_wall")
+      self:setStatus(
+        self.wallDepth == "behind"
+          and "Front walls: BEHIND ground — place a Side Wall on top to stack"
+          or "Front walls: IN FRONT of ground"
+      )
+    else
+      self:setStatus("R: Side Wall = Left/Right · Front/Half/Cracked = In Front/Behind")
+    end
+
+  elseif key == "v" then
+    self.loadDropdownOpen = false
+    self:togglePerspective(grid, camera)
 
   elseif key == "c" or key == "n" then
     grid:clear()
@@ -1071,8 +1227,7 @@ end
 
 function Editor:clampCamera(grid, camera)
   local width, height = love.graphics.getDimensions()
-  local worldWidth = grid.columns * grid.size
-  local worldHeight = grid.rows * grid.size
+  local worldWidth, worldHeight = grid:worldBounds()
   local halfWidth = math.min(
     worldWidth / 2,
     width / camera.zoom / 2
@@ -1163,6 +1318,21 @@ function Editor:wheelmoved(y, grid, camera)
     return
   end
 
+  if self.tool == "half_wall" and love.keyboard.isDown("lshift", "rshift") then
+    local delta = y > 0 and 0.1 or -0.1
+    self.halfWallFill = math.max(0.1, math.min(0.9, self.halfWallFill + delta))
+    self.halfWallFill = math.floor(self.halfWallFill * 10 + 0.5) / 10
+    clearToolIcon("half_wall")
+    self:setStatus(
+      "Half wall fill: "
+        .. math.floor(self.halfWallFill * 100 + 0.5)
+        .. "% — cube must be "
+        .. math.floor((1 - self.halfWallFill) * 100 + 0.5)
+        .. "% size or smaller"
+    )
+    return
+  end
+
   camera.zoom = math.max(
     1,
     math.min(3, camera.zoom + y * 0.25)
@@ -1186,10 +1356,10 @@ function Editor:draw(grid, camera)
     local maxCol = math.max(rectangle.startCol, rectangle.endCol)
     local minRow = math.min(rectangle.startRow, rectangle.endRow)
     local maxRow = math.max(rectangle.startRow, rectangle.endRow)
-    local left = (minCol - 1) * grid.size
-    local top = (minRow - 1) * grid.size
+    local left, top = Perspective.tileOrigin(minCol, minRow, grid.size)
+    local pitch = Perspective.rowPitch(grid.size)
     local right = maxCol * grid.size
-    local bottom = maxRow * grid.size
+    local bottom = maxRow * pitch
     local x1, y1 = camera:worldToScreen(left, top)
     local x2, y2 = camera:worldToScreen(right, bottom)
 
@@ -1203,25 +1373,29 @@ function Editor:draw(grid, camera)
   if col and not self.rectangle and not self:isOverHud(mouseX, mouseY) then
     local worldX, worldY = grid:tileCenter(col, row)
     local x, y = camera:worldToScreen(worldX, worldY)
-    local size = grid.size * camera.zoom
+    local sizeW = grid.size * camera.zoom
+    local sizeH = Perspective.rowPitch(grid.size) * camera.zoom
+    local ghostSize = Perspective.isSide() and math.max(sizeW, sizeH * 1.6) or sizeW
 
     drawToolGhost(
       self.tool,
       self.wallFacing,
       x,
       y,
-      size,
-      camera.zoom
+      ghostSize,
+      camera.zoom,
+      self.halfWallFill,
+      self.wallDepth
     )
 
     love.graphics.setColor(1, 1, 1, 0.55)
     love.graphics.setLineWidth(2)
     love.graphics.rectangle(
       "line",
-      x - size / 2,
-      y - size / 2,
-      size,
-      size
+      x - sizeW / 2,
+      y - sizeH / 2,
+      sizeW,
+      sizeH
     )
   end
 
@@ -1235,17 +1409,18 @@ function Editor:draw(grid, camera)
     spawnY
   )
 
-  local spawnSize = grid.size * camera.zoom
+  local spawnW = grid.size * camera.zoom
+  local spawnH = Perspective.rowPitch(grid.size) * camera.zoom
 
   love.graphics.setColor(0.35, 1, 0.55, 0.9)
   love.graphics.setLineWidth(3)
 
   love.graphics.rectangle(
     "line",
-    spawnX - spawnSize / 2 + 3,
-    spawnY - spawnSize / 2 + 3,
-    spawnSize - 6,
-    spawnSize - 6
+    spawnX - spawnW / 2 + 3,
+    spawnY - spawnH / 2 + 3,
+    spawnW - 6,
+    spawnH - 6
   )
 
   love.graphics.setColor(0.025, 0.05, 0.09, 0.94)
@@ -1264,6 +1439,7 @@ function Editor:draw(grid, camera)
     local y = buttonY(index)
     local selected = self.tool == tool.name
       or (tool.name == "load" and self.loadDropdownOpen)
+      or (tool.name == "perspective" and Perspective.isSide())
 
     if selected then
       if tool.name == "snowflake" then
@@ -1272,12 +1448,16 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.32, 0.48, 0.62, 0.9)
       elseif tool.name == "front_wall" then
         love.graphics.setColor(0.55, 0.38, 0.28, 0.9)
+      elseif tool.name == "half_wall" then
+        love.graphics.setColor(0.45, 0.55, 0.62, 0.95)
       elseif tool.name == "cracked_wall" then
         love.graphics.setColor(0.42, 0.28, 0.20, 0.95)
       elseif tool.name == "boulder" then
         love.graphics.setColor(0.45, 0.43, 0.40, 0.95)
       elseif tool.name == "cracked_boulder" then
         love.graphics.setColor(0.34, 0.32, 0.30, 0.95)
+      elseif tool.name == "perspective" then
+        love.graphics.setColor(0.42, 0.62, 0.82, 0.95)
       else
         love.graphics.setColor(0.18, 0.58, 0.86, 0.8)
       end
@@ -1295,7 +1475,7 @@ function Editor:draw(grid, camera)
       4
     )
 
-    local icon = ensureToolIcon(tool, self.wallFacing)
+    local icon = ensureToolIcon(tool, self.wallFacing, self.halfWallFill, self.wallDepth)
     local iconX = BUTTON_X + ICON_PAD
     local iconY = y + math.floor((BUTTON_H - ICON_SIZE) * 0.5)
 
@@ -1312,9 +1492,17 @@ function Editor:draw(grid, camera)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(icon, iconX, iconY)
 
+    local label = tool.label
+    if tool.name == "perspective" then
+      label = Perspective.shortLabel() .. " View"
+    elseif tool.name == "side_wall" then
+      label = "Side (" .. (self.wallFacing == "right" and "Right" or "Left") .. ")"
+    elseif isFrontWallTool(tool.name) then
+      label = tool.label .. (self.wallDepth == "behind" and " · Behind" or " · Front")
+    end
     love.graphics.setColor(0.92, 0.97, 1)
     love.graphics.print(
-      tool.label,
+      label,
       iconX + ICON_SIZE + 8,
       y + textY
     )
@@ -1503,7 +1691,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  6 Side  ·  7 Front  ·  8 Cracked Wall  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  6 Side  ·  7 Front  ·  H Half Wall  ·  8 Cracked Wall  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,
@@ -1511,23 +1699,38 @@ function Editor:draw(grid, camera)
   )
   love.graphics.setColor(0.58, 0.75, 0.9)
   love.graphics.printf(
-    "Left-drag Paint  ·  Shift+drag Rectangle  ·  Right-drag Erase  ·  R Flip Side Facing",
+    "Left-drag Paint  ·  Shift+drag Rect  ·  Right-drag Erase  ·  R = Side L/R or Front Behind/In-Front  ·  [ ] Half",
     12,
     legendY + 27,
     screenWidth - 24,
     "center"
   )
   love.graphics.printf(
-    "Ctrl+S Save  ·  L Load  ·  N/C New Blank  ·  F Fill Ground",
+    "Ctrl+S Save  ·  L Load  ·  N/C New  ·  F Fill  ·  Behind front walls can take a Side Wall on top",
     12,
     legendY + 47,
     screenWidth - 24,
     "center"
   )
   love.graphics.printf(
-    "WASD/Arrows Pan  ·  Mouse Wheel Zoom  ·  E Play/Edit  ·  Esc Menu",
+    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu",
     12,
     legendY + 67,
+    screenWidth - 24,
+    "center"
+  )
+  local rHint
+  if self.tool == "side_wall" then
+    rHint = "R → Side facing: " .. self.wallFacing
+  elseif isFrontWallTool(self.tool) then
+    rHint = "R → Wall depth: " .. (self.wallDepth == "behind" and "Behind ground" or "In front of ground")
+  else
+    rHint = "R → Side = Left/Right · Front/Half/Cracked = In Front/Behind"
+  end
+  love.graphics.printf(
+    rHint,
+    12,
+    legendY + 87,
     screenWidth - 24,
     "center"
   )
