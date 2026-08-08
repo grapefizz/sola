@@ -4,8 +4,8 @@ Editor.__index = Editor
 local LEVELS_DIR = "levels"
 local HUD_X, HUD_Y = 10, 10
 local HUD_W = 160
-local HUD_H = 304
-local TOOL_BUTTON_COUNT = 10
+local HUD_H = 332
+local TOOL_BUTTON_COUNT = 11
 local BUTTON_X = 18
 local BUTTON_W = 144
 local BUTTON_H = 24
@@ -422,6 +422,8 @@ function Editor:applyTool(tool, col, row, grid)
     grid:addWall(col, row, "side", self.wallFacing)
   elseif tool == "front_wall" then
     grid:addWall(col, row, "front")
+  elseif tool == "cracked_wall" then
+    grid:addWall(col, row, "front", nil, { cracked = true })
   elseif tool == "erase" then
     grid:erase(col, row)
   end
@@ -582,12 +584,16 @@ function Editor:mousepressed(x, y, button, grid, camera)
       return
     elseif toolButton == 8 then
       self.loadDropdownOpen = false
-      self.tool = "erase"
+      self.tool = "cracked_wall"
       return
     elseif toolButton == 9 then
-      self:beginSave()
+      self.loadDropdownOpen = false
+      self.tool = "erase"
       return
     elseif toolButton == 10 then
+      self:beginSave()
+      return
+    elseif toolButton == 11 then
       self:toggleLoadDropdown()
       return
     end
@@ -725,6 +731,9 @@ function Editor:keypressed(key, grid)
     self.tool = "front_wall"
     self.loadDropdownOpen = false
   elseif key == "8" then
+    self.tool = "cracked_wall"
+    self.loadDropdownOpen = false
+  elseif key == "9" then
     self.tool = "erase"
     self.loadDropdownOpen = false
 
@@ -951,6 +960,7 @@ function Editor:draw(grid, camera)
     { name = "tea", label = "Iced Tea Goal" },
     { name = "side_wall", label = "Side Wall" },
     { name = "front_wall", label = "Front Wall" },
+    { name = "cracked_wall", label = "Cracked Wall" },
     { name = "erase", label = "Erase" },
     { name = "save", label = "Save" },
     { name = "load", label = "Load" },
@@ -965,6 +975,8 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.32, 0.48, 0.62, 0.9)
       elseif tool.name == "front_wall" then
         love.graphics.setColor(0.55, 0.38, 0.28, 0.9)
+      elseif tool.name == "cracked_wall" then
+        love.graphics.setColor(0.42, 0.28, 0.20, 0.95)
       else
         love.graphics.setColor(0.18, 0.58, 0.86, 0.8)
       end
@@ -1178,7 +1190,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Iced Tea  ·  6 Side Wall  ·  7 Front Wall  ·  8 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Iced Tea  ·  6 Side Wall  ·  7 Front Wall  ·  8 Cracked  ·  9 Erase",
     12,
     legendY + 7,
     screenWidth - 24,
