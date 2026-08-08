@@ -67,7 +67,16 @@ function Player:canStepTo(grid, col, row)
 end
 
 function Player:beginStep(grid, col, row, deadly)
-  local moveCost = deadly and 0 or math.min(grid:getMoveCost(col, row), self.movesRemaining)
+  local rawCost = grid:getMoveCost(col, row)
+  local moveCost = 0
+  if not deadly then
+    if rawCost < 0 then
+      moveCost = -math.min(-rawCost, self.maxMoves - self.movesRemaining)
+    else
+      moveCost = math.min(rawCost, self.movesRemaining)
+    end
+  end
+
   local movement = self.movement
   movement.active = true
   movement.elapsed = 0
@@ -121,6 +130,7 @@ function Player:update(dt, grid)
   movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
   if movement.elapsed >= movement.duration then
     grid:addWater(movement.toCol, movement.toRow)
+    grid:consumeSnowflake(movement.toCol, movement.toRow)
     if movement.deadly then
       self.dead = true
       self.movesRemaining = 0

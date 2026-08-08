@@ -10,6 +10,7 @@ function Grid.new(size, columns, rows, fillGround)
     waterTiles = {},
     fireTiles = {},
     iceTiles = {},
+    snowflakeTiles = {},
     fireRadius = 1,
   }, Grid)
 
@@ -56,6 +57,7 @@ function Grid:erase(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
 end
 
 function Grid:clear()
@@ -63,6 +65,7 @@ function Grid:clear()
   self.waterTiles = {}
   self.fireTiles = {}
   self.iceTiles = {}
+  self.snowflakeTiles = {}
 end
 
 function Grid:clearWater()
@@ -87,9 +90,11 @@ function Grid:addFire(col, row)
     return
   end
   self:setGround(col, row)
-  self.waterTiles[self:key(col, row)] = nil
-  self.iceTiles[self:key(col, row)] = nil
-  self.fireTiles[self:key(col, row)] = { col = col, row = row }
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.fireTiles[key] = { col = col, row = row }
 end
 
 function Grid:removeFire(col, row)
@@ -105,9 +110,11 @@ function Grid:addIce(col, row)
     return
   end
   self:setGround(col, row)
-  self.fireTiles[self:key(col, row)] = nil
-  self.waterTiles[self:key(col, row)] = nil
-  self.iceTiles[self:key(col, row)] = { col = col, row = row }
+  local key = self:key(col, row)
+  self.fireTiles[key] = nil
+  self.waterTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.iceTiles[key] = { col = col, row = row }
 end
 
 function Grid:removeIce(col, row)
@@ -128,7 +135,45 @@ function Grid:isInFireZone(col, row)
   return false
 end
 
+function Grid:addSnowflake(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  if self:isInFireZone(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = { col = col, row = row }
+end
+
+function Grid:removeSnowflake(col, row)
+  self.snowflakeTiles[self:key(col, row)] = nil
+end
+
+function Grid:consumeSnowflake(col, row)
+  local key = self:key(col, row)
+  if self.snowflakeTiles[key] then
+    self.snowflakeTiles[key] = nil
+    return true
+  end
+  return false
+end
+
+function Grid:hasSnowflake(col, row)
+  return self.snowflakeTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:isSnowflakeTile(col, row)
+  return self.snowflakeTiles[self:key(col, row)] ~= nil
+end
+
 function Grid:getMoveCost(col, row)
+  if self:isSnowflakeTile(col, row) then
+    return -1
+  end
   if self:isIceTile(col, row) then
     return 0
   end
@@ -147,6 +192,8 @@ function Grid:serialize()
         cells[col] = "F"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
+      elseif self:isSnowflakeTile(col, row) then
+        cells[col] = "S"
       elseif self:hasGround(col, row) then
         cells[col] = "#"
       else
@@ -173,6 +220,8 @@ function Grid:load(serialized)
         self:addFire(col, row)
       elseif cell == "I" then
         self:addIce(col, row)
+      elseif cell == "S" then
+        self:addSnowflake(col, row)
       end
     end
     row = row + 1
@@ -219,6 +268,13 @@ function Grid:draw(zoom)
     end
   end
 
+  for _, snowflake in pairs(self.snowflakeTiles) do
+    local x = (snowflake.col - 1) * self.size
+    local y = (snowflake.row - 1) * self.size
+    love.graphics.setColor(0.08, 0.24, 0.42, 0.30)
+    love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
+  end
+
   love.graphics.setLineWidth(1 / zoom)
   for _, tile in pairs(self.waterTiles) do
     local x = (tile.col - 1) * self.size
@@ -227,6 +283,28 @@ function Grid:draw(zoom)
     love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
     love.graphics.setColor(0.40, 0.78, 0.95, 0.65)
     love.graphics.line(x + 8, y + 13, x + self.size - 8, y + 13)
+  end
+
+  for _, snowflake in pairs(self.snowflakeTiles) do
+    local centerX, centerY = self:tileCenter(snowflake.col, snowflake.row)
+    local halfWidth = self.size * 0.35
+    local halfHeight = self.size * 0.25
+    love.graphics.setColor(0.12, 0.48, 0.90, 0.9)
+    love.graphics.polygon(
+      "fill",
+      centerX, centerY - halfHeight,
+      centerX + halfWidth, centerY,
+      centerX, centerY + halfHeight,
+      centerX - halfWidth, centerY
+    )
+    love.graphics.setColor(0.55, 0.85, 1.0, 0.95)
+    love.graphics.polygon(
+      "fill",
+      centerX, centerY - halfHeight * 0.5,
+      centerX + halfWidth * 0.5, centerY,
+      centerX, centerY + halfHeight * 0.5,
+      centerX - halfWidth * 0.5, centerY
+    )
   end
 
   love.graphics.setColor(0.13, 0.32, 0.47)
