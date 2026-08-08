@@ -142,6 +142,10 @@ local function nextDefaultName(existing)
   return "level" .. n
 end
 
+function Editor.listLevelNames()
+  return listLevelNames()
+end
+
 function Editor.new(spawnCol, spawnRow)
   return setmetatable({
     active = false,

@@ -9,13 +9,26 @@ local Editor = require "game.editor"
 local Grid = require "game.grid"
 local Player = require "game.player"
 
-local state = "menu" -- menu | credits | settings | play
+local state = "menu" -- menu | levels | credits | settings | play
 local elapsed = 0
 local hover = 0
 local selected = 1
 local snow = {}
 local fonts = {}
 local mouseX, mouseY = 0, 0
+
+-- level select (Stardew-style blue panel)
+local levelList = {}
+local levelSelected = 1
+local levelHover = 0
+local levelSlide = {}
+local levelScroll = 0
+local levelIntro = 0
+local currentLevelName = nil
+local levelCompleteFlash = 0
+local progress = { finished = {} }
+local LEVEL_VISIBLE = 6
+local PROGRESS_FILE = "progress.txt"
 
 local iceModel
 local iceTex
@@ -77,29 +90,118 @@ local sfxVol = 0.8
 local SPAWN_COL, SPAWN_ROW = 10, 8
 local grid, player, camera, editor
 
+local function loadProgress()
+  progress.finished = {}
+  local data = love.filesystem.read(PROGRESS_FILE)
+  if not data then
+    return
+  end
+  for line in data:gmatch("[^\r\n]+") do
+    local name = line:match("^%s*(.-)%s*$")
+    if name and name ~= "" then
+      progress.finished[name] = true
+    end
+  end
+end
+
+local function saveProgress()
+  local names = {}
+  for name in pairs(progress.finished) do
+    names[#names + 1] = name
+  end
+  table.sort(names, function(a, b)
+    return a:lower() < b:lower()
+  end)
+  love.filesystem.write(PROGRESS_FILE, table.concat(names, "\n") .. (#names > 0 and "\n" or ""))
+end
+
+local function markLevelFinished(name)
+  if not name or progress.finished[name] then
+    return
+  end
+  progress.finished[name] = true
+  saveProgress()
+end
+
+local function prettyLevelName(name)
+  local n = name:match("^level(%d+)$")
+  if n then
+    return "Level " .. tonumber(n)
+  end
+  return name:gsub("^%l", string.upper):gsub("(%s%l)", string.upper)
+end
+
+local function refreshLevelList()
+  levelList = Editor.listLevelNames()
+  if levelSelected > #levelList then
+    levelSelected = math.max(1, #levelList)
+  end
+  if levelSelected < 1 then
+    levelSelected = 1
+  end
+  for i = 1, #levelList do
+    levelSlide[i] = levelSlide[i] or 0
+  end
+  local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
+  levelScroll = math.max(0, math.min(maxScroll, levelScroll))
+end
+
+local function openLevelSelect()
+  state = "levels"
+  intro = 0
+  levelIntro = 0
+  levelScroll = 0
+  refreshLevelList()
+  love.window.setTitle("Ice Cube — Levels")
+end
+
 local function restartRun()
-  grid:clearWater()
-  grid:setGround(SPAWN_COL, SPAWN_ROW)
-  grid:removeFire(SPAWN_COL, SPAWN_ROW)
+  if currentLevelName and editor then
+    editor:loadLevel(grid, currentLevelName)
+  else
+    grid:clearWater()
+    grid:setGround(SPAWN_COL, SPAWN_ROW)
+    grid:removeFire(SPAWN_COL, SPAWN_ROW)
+  end
   player = Player.new(SPAWN_COL, SPAWN_ROW)
   local cameraX, cameraY = grid:tileCenter(player.col, player.row)
   camera = Camera.new(cameraX, cameraY, 2)
   grid:addWater(player.col, player.row)
+  levelCompleteFlash = 0
 end
 
-local function startPlay(openEditor)
+local function startPlay(openEditor, levelName)
   grid = Grid.new(40, 20, 15)
   editor = Editor.new(SPAWN_COL, SPAWN_ROW)
-  grid:addFire(13, 8)
-  restartRun()
+  currentLevelName = nil
+
   if openEditor then
+    grid:addFire(13, 8)
+    restartRun()
     grid:clearWater()
     editor:setActive(true)
     love.window.setTitle("Ice Cube — Level Editor")
-  else
-    editor:setActive(false)
-    love.window.setTitle("Ice Cube — Play")
+    return
   end
+
+  editor:setActive(false)
+  if levelName then
+    currentLevelName = levelName
+    editor:loadLevel(grid, levelName)
+  else
+    grid:addFire(13, 8)
+  end
+  restartRun()
+  love.window.setTitle(levelName and ("Ice Cube — " .. prettyLevelName(levelName)) or "Ice Cube — Play")
+end
+
+local function startSelectedLevel()
+  local name = levelList[levelSelected]
+  if not name then
+    return
+  end
+  state = "play"
+  startPlay(false, name)
 end
 
 local function clamp(v, a, b)
@@ -351,6 +453,7 @@ function love.load()
   makeSnow(w, h)
   ensureCubeCanvas(cubeViewSize(w, h))
   intro = 0
+  loadProgress()
 end
 
 function love.resize(w, h)
@@ -460,8 +563,7 @@ local function activate(item)
   bumpShake(3.5, 0.16)
   local id = item.id
   if id == "play" then
-    state = "play"
-    startPlay(false)
+    openLevelSelect()
   elseif id == "editor" then
     state = "play"
     startPlay(true)
@@ -491,6 +593,65 @@ end
 local function easeOutCubic(t)
   local u = 1 - t
   return 1 - u * u * u
+end
+
+local function levelsPanelRect(width, height)
+  local pw = math.min(460, math.max(360, math.floor(width * 0.46)))
+  local rowH = 52
+  local slots = math.min(LEVEL_VISIBLE, math.max(1, #levelList))
+  local ph = 78 + slots * rowH + 48
+  local px = math.floor((width - pw) * 0.5)
+  local py = math.floor((height - ph) * 0.5)
+  return px, py, pw, ph, rowH, slots
+end
+
+local function levelItemHit(mx, my, width, height)
+  if #levelList == 0 then
+    return 0
+  end
+  local px, py, pw, _, rowH, slots = levelsPanelRect(width, height)
+  local y0 = py + 70
+  for i = 1, slots do
+    local index = i + levelScroll
+    if index > #levelList then
+      break
+    end
+    local y = y0 + (i - 1) * rowH
+    if mx >= px + 16 and mx <= px + pw - 16 and my >= y and my <= y + rowH - 8 then
+      return index
+    end
+  end
+  return 0
+end
+
+local function drawStatusBadge(x, y, finished, alpha)
+  local label = finished and "Finished" or "New"
+  love.graphics.setFont(fonts.small)
+  local tw = fonts.small:getWidth(label)
+  local th = fonts.small:getHeight()
+  local pad = finished and 24 or 16
+  local bw, bh = tw + pad, th + 8
+  local bx = x - bw
+
+  if finished then
+    love.graphics.setColor(0.18, 0.42, 0.28, 0.85 * alpha)
+    love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
+    love.graphics.setColor(0.45, 0.92, 0.62, 0.95 * alpha)
+    love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
+    love.graphics.setLineWidth(2)
+    love.graphics.line(bx + 7, y + bh * 0.55, bx + 10, y + bh * 0.72, bx + 15, y + bh * 0.32)
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(0.92, 1.0, 0.95, alpha)
+    love.graphics.print(label, bx + 20, y + 3)
+  else
+    love.graphics.setColor(0.22, 0.38, 0.55, 0.75 * alpha)
+    love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
+    love.graphics.setColor(0.65, 0.82, 0.98, 0.7 * alpha)
+    love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
+    love.graphics.setColor(0.85, 0.94, 1.0, 0.9 * alpha)
+    love.graphics.print(label, bx + 8, y + 3)
+  end
+  return bw
 end
 
 function love.update(dt)
@@ -523,8 +684,31 @@ function love.update(dt)
     end
   end
 
-  if state == "menu" or state == "credits" or state == "settings" then
+  if state == "menu" or state == "credits" or state == "settings" or state == "levels" then
     intro = math.min(1, intro + dt * 1.35)
+  end
+
+  if state == "levels" then
+    levelIntro = math.min(1, levelIntro + dt * 1.5)
+    local hit = levelItemHit(mouseX, mouseY, width, height)
+    if hit > 0 then
+      levelSelected = hit
+      levelHover = hit
+    else
+      levelHover = 0
+    end
+    for i = 1, #levelList do
+      local target = ((i == levelSelected) or (i == levelHover)) and 1 or 0
+      levelSlide[i] = lerp(levelSlide[i] or 0, target, 1 - math.exp(-16 * dt))
+    end
+    -- keep selection in view
+    if levelSelected < levelScroll + 1 then
+      levelScroll = levelSelected - 1
+    elseif levelSelected > levelScroll + LEVEL_VISIBLE then
+      levelScroll = levelSelected - LEVEL_VISIBLE
+    end
+    local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
+    levelScroll = math.max(0, math.min(maxScroll, levelScroll))
   end
 
   if state == "menu" then
@@ -573,6 +757,21 @@ function love.update(dt)
       editor:update(dt, grid, camera)
     else
       player:update(dt, grid)
+      -- melt without burning = finished
+      if currentLevelName
+        and not player.dead
+        and player.movesRemaining <= 0
+        and not player.movement.active
+        and not progress.finished[currentLevelName]
+      then
+        markLevelFinished(currentLevelName)
+        levelCompleteFlash = 2.2
+        playSfx(sfxToggle)
+        bumpShake(4, 0.2)
+      end
+      if levelCompleteFlash > 0 then
+        levelCompleteFlash = math.max(0, levelCompleteFlash - dt)
+      end
     end
   end
 end
@@ -782,6 +981,102 @@ local function drawMenu(width, height)
   drawSnow() -- overlay so flakes cover the full screen, not just left of the panel
 end
 
+local function drawLevels(width, height)
+  drawAtmosphere(width, height)
+  local e = easeOutCubic(intro)
+  local px, py, pw, ph, rowH, slots = levelsPanelRect(width, height)
+  py = py + math.floor((1 - e) * 14)
+  drawPanel(px, py, pw, ph, e)
+
+  -- soft sparkle accents
+  local spark = (0.35 + 0.45 * math.sin(elapsed * 3.2)) * e
+  love.graphics.setColor(0.85, 0.95, 1.0, spark * 0.55)
+  love.graphics.circle("fill", px + 28, py + 28, 2)
+  love.graphics.circle("fill", px + pw - 32, py + 34, 1.6)
+
+  love.graphics.setFont(fonts.title)
+  local t = "Choose a Level"
+  local tx = math.floor((width - fonts.title:getWidth(t)) * 0.5)
+  love.graphics.setColor(0.06, 0.16, 0.30, e)
+  love.graphics.print(t, tx + 1, py + 16)
+  love.graphics.setColor(0.95, 0.98, 1.0, e)
+  love.graphics.print(t, tx, py + 15)
+
+  love.graphics.setColor(0.20, 0.38, 0.55, 0.5 * e)
+  love.graphics.rectangle("fill", px + 28, py + 52, pw - 56, 2)
+
+  if #levelList == 0 then
+    love.graphics.setFont(fonts.credits)
+    local empty = "No levels yet — try the editor!"
+    love.graphics.setColor(0.78, 0.90, 1.0, 0.85 * e)
+    love.graphics.print(empty, math.floor((width - fonts.credits:getWidth(empty)) * 0.5), py + ph * 0.45)
+  else
+    local y0 = py + 70
+    for i = 1, slots do
+      local index = i + levelScroll
+      local name = levelList[index]
+      if not name then
+        break
+      end
+      local y = y0 + (i - 1) * rowH
+      local slide = levelSlide[index] or 0
+      local active = slide > 0.15
+      local pulse = active and (0.85 + 0.15 * math.sin(elapsed * 5)) or 1
+      local finished = progress.finished[name] == true
+      local inset = math.floor(10 - 4 * slide)
+      local rowX = px + inset
+      local rowW = pw - inset * 2
+      local rowInnerH = rowH - 10
+
+      if active then
+        drawRowHighlight(rowX, y, rowW, rowInnerH, e * pulse)
+        local cx = rowX + 16
+        local cy = y + math.floor(rowInnerH * 0.5)
+        love.graphics.setColor(0.45, 0.78, 1.0, 0.45 * e)
+        love.graphics.polygon("fill", cx - 2, cy - 10, cx + 14, cy, cx - 2, cy + 10)
+        love.graphics.setColor(1, 1, 1, e)
+        love.graphics.polygon("fill", cx, cy - 8, cx + 12, cy, cx, cy + 8)
+      end
+
+      love.graphics.setFont(fonts.menu)
+      local label = prettyLevelName(name)
+      local th = fonts.menu:getHeight()
+      local lx = px + 44
+      local ly = y + math.floor((rowInnerH - th) * 0.5)
+      local labelA = (0.7 + 0.3 * slide) * e
+
+      love.graphics.setColor(0.06, 0.16, 0.30, labelA)
+      love.graphics.print(label, lx + 1, ly + 1)
+      love.graphics.setColor(0.95, 0.98, 1.0, labelA)
+      love.graphics.print(label, lx, ly)
+
+      local badgeY = y + math.floor((rowInnerH - (fonts.small:getHeight() + 8)) * 0.5)
+      drawStatusBadge(px + pw - 22, badgeY, finished, e)
+    end
+
+    -- scrollbar
+    local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
+    if maxScroll > 0 then
+      local trackX = px + pw - 14
+      local trackY = y0
+      local trackH = slots * rowH - 10
+      love.graphics.setColor(0.12, 0.24, 0.38, 0.55 * e)
+      love.graphics.rectangle("fill", trackX, trackY, 4, trackH, 2, 2)
+      local thumbH = math.max(18, trackH * (LEVEL_VISIBLE / #levelList))
+      local thumbY = trackY + (trackH - thumbH) * (levelScroll / maxScroll)
+      love.graphics.setColor(0.70, 0.88, 1.0, 0.85 * e)
+      love.graphics.rectangle("fill", trackX, thumbY, 4, thumbH, 2, 2)
+    end
+  end
+
+  love.graphics.setFont(fonts.small)
+  love.graphics.setColor(0.75, 0.88, 1.0, 0.75 * e)
+  local tip = "Enter to play  ·  Esc to go back"
+  love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), py + ph - 30)
+
+  drawSnow()
+end
+
 local function drawCredits(width, height)
   drawAtmosphere(width, height)
   local e = easeOutCubic(intro)
@@ -963,6 +1258,23 @@ function love.draw()
       editor:draw(grid, camera)
     else
       player:draw(grid, camera)
+      player:drawHud()
+      if levelCompleteFlash > 0 then
+        local a = math.min(1, levelCompleteFlash)
+        love.graphics.setColor(0.04, 0.10, 0.18, 0.45 * a)
+        love.graphics.rectangle("fill", 0, 0, width, height)
+        love.graphics.setFont(fonts.title)
+        local msg = "Level finished!"
+        local tw = fonts.title:getWidth(msg)
+        love.graphics.setColor(0.06, 0.16, 0.30, a)
+        love.graphics.print(msg, math.floor((width - tw) * 0.5) + 1, math.floor(height * 0.42) + 1)
+        love.graphics.setColor(0.85, 1.0, 0.92, a)
+        love.graphics.print(msg, math.floor((width - tw) * 0.5), math.floor(height * 0.42))
+        love.graphics.setFont(fonts.small)
+        local tip = "Esc · back to levels"
+        love.graphics.setColor(0.75, 0.90, 1.0, 0.85 * a)
+        love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), math.floor(height * 0.42) + 42)
+      end
     end
     return
   end
@@ -972,6 +1284,8 @@ function love.draw()
 
   if state == "menu" then
     drawMenu(width, height)
+  elseif state == "levels" then
+    drawLevels(width, height)
   elseif state == "credits" then
     drawCredits(width, height)
   elseif state == "settings" then
@@ -995,6 +1309,27 @@ function love.keypressed(key)
       activate(menu[selected])
     elseif key == "escape" then
       love.event.quit()
+    end
+  elseif state == "levels" then
+    if key == "escape" or key == "backspace" then
+      state = "menu"
+      intro = 0
+      love.window.setTitle("Ice Cube")
+      playSfx(sfxClick)
+    elseif #levelList > 0 then
+      if key == "up" or key == "w" then
+        levelSelected = levelSelected - 1
+        if levelSelected < 1 then levelSelected = #levelList end
+        playSfx(sfxClick)
+      elseif key == "down" or key == "s" then
+        levelSelected = levelSelected + 1
+        if levelSelected > #levelList then levelSelected = 1 end
+        playSfx(sfxClick)
+      elseif key == "return" or key == "space" then
+        playSfx(sfxClick)
+        bumpShake(3.5, 0.16)
+        startSelectedLevel()
+      end
     end
   elseif state == "credits" then
     if key == "escape" or key == "return" or key == "space" or key == "backspace" then
@@ -1042,9 +1377,13 @@ function love.keypressed(key)
     end
 
     if key == "escape" then
-      state = "menu"
-      intro = 0
-      love.window.setTitle("Ice Cube")
+      if editor.active then
+        state = "menu"
+        intro = 0
+        love.window.setTitle("Ice Cube")
+      else
+        openLevelSelect()
+      end
       playSfx(sfxClick)
       return
     end
@@ -1103,6 +1442,14 @@ function love.mousepressed(x, y, button)
       playSfx(sfxToggle)
       bumpShake(5, 0.22)
     end
+  elseif state == "levels" then
+    local hit = levelItemHit(x, y, width, height)
+    if hit > 0 then
+      levelSelected = hit
+      playSfx(sfxClick)
+      bumpShake(3.5, 0.16)
+      startSelectedLevel()
+    end
   elseif state == "credits" then
     state = "menu"
     intro = 0
@@ -1150,6 +1497,11 @@ function love.mousemoved(x, y, dx, dy)
 end
 
 function love.wheelmoved(_, y)
+  if state == "levels" and y ~= 0 then
+    local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
+    levelScroll = math.max(0, math.min(maxScroll, levelScroll - y))
+    return
+  end
   if state == "play" and editor.active then
     editor:wheelmoved(y, grid, camera)
   end
