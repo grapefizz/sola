@@ -1113,7 +1113,10 @@ function love.mousepressed(x, y, button)
   end
 end
 
-function love.mousereleased(_, _, button)
+function love.mousereleased(x, y, button)
+  if state == "play" and editor and editor.active then
+    editor:mousereleased(x, y, button)
+  end
   if button == 1 then
     pressingCube = false
   end
