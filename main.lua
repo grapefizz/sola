@@ -22,13 +22,53 @@ local levelList = {}
 local levelSelected = 1
 local levelHover = 0
 local levelSlide = {}
-local levelScroll = 0
+local levelScroll = 0 -- row offset for card grid
 local levelIntro = 0
 local currentLevelName = nil
 local levelCompleteFlash = 0
 local progress = { finished = {} }
-local LEVEL_VISIBLE = 6
+local levelPreviews = {}
 local PROGRESS_FILE = "progress.txt"
+local CARD_COLS = 3
+local CARD_ROWS = 2
+local CARD_W = 230
+local CARD_H = 280
+local CARD_GAP_X = 28
+local CARD_GAP_Y = 22
+local PREVIEW_PAD = 14
+local MAP_COLS, MAP_ROWS = 20, 15
+local TITLE_AREA = 68
+local FOOTER_AREA = 44
+
+local function refreshCardMetrics(width, height)
+  width = width or love.graphics.getWidth()
+  height = height or love.graphics.getHeight()
+  local maxGridW = math.floor(width * 0.9)
+  local maxGridH = math.floor(height - TITLE_AREA - FOOTER_AREA - 4)
+  CARD_GAP_X = math.max(20, math.floor(width * 0.028))
+  CARD_GAP_Y = math.max(16, math.floor(height * 0.028))
+  local fitW = math.floor((maxGridW - (CARD_COLS - 1) * CARD_GAP_X) / CARD_COLS)
+  local fitH = math.floor((maxGridH - (CARD_ROWS - 1) * CARD_GAP_Y) / CARD_ROWS)
+
+  -- card hugs the map preview (20x15) + label strip under it
+  PREVIEW_PAD = math.max(8, math.floor(fitW * 0.045))
+  local labelStrip = math.max(48, math.floor(fitH * 0.18))
+  local maxPrevW = fitW - PREVIEW_PAD * 2
+  local maxPrevH = fitH - PREVIEW_PAD * 2 - labelStrip
+  -- fit preview into available box keeping map aspect
+  local mapAspect = MAP_COLS / MAP_ROWS
+  local prevW, prevH
+  if maxPrevW / maxPrevH > mapAspect then
+    prevH = maxPrevH
+    prevW = math.floor(prevH * mapAspect)
+  else
+    prevW = maxPrevW
+    prevH = math.floor(prevW / mapAspect)
+  end
+
+  CARD_W = prevW + PREVIEW_PAD * 2
+  CARD_H = prevH + PREVIEW_PAD * 2 + labelStrip
+end
 
 local iceModel
 local iceTex
@@ -131,8 +171,79 @@ local function prettyLevelName(name)
   return name:gsub("^%l", string.upper):gsub("(%s%l)", string.upper)
 end
 
+local function clearLevelPreviews()
+  for name, canvas in pairs(levelPreviews) do
+    if canvas and canvas.release then
+      canvas:release()
+    end
+    levelPreviews[name] = nil
+  end
+end
+
+local function buildLevelPreview(name)
+  local pw = math.max(64, CARD_W - PREVIEW_PAD * 2)
+  local ph = math.max(48, math.floor(pw * MAP_ROWS / MAP_COLS))
+
+  -- load the real level into a throwaway grid and snapshot its draw
+  local snap = Grid.new(40, MAP_COLS, MAP_ROWS, false)
+  local contents = Editor.readLevelContents(name)
+  if contents then
+    snap:load(contents)
+  end
+  snap:setGround(SPAWN_COL, SPAWN_ROW)
+  snap:removeFire(SPAWN_COL, SPAWN_ROW)
+  snap:addWater(SPAWN_COL, SPAWN_ROW)
+
+  local worldW = snap.columns * snap.size
+  local worldH = snap.rows * snap.size
+  local scale = math.min(pw / worldW, ph / worldH)
+  local ox = (pw - worldW * scale) * 0.5
+  local oy = (ph - worldH * scale) * 0.5
+
+  local canvas = love.graphics.newCanvas(pw, ph)
+  canvas:setFilter("linear", "linear")
+
+  local prevCanvas = love.graphics.getCanvas()
+  love.graphics.setCanvas(canvas)
+  love.graphics.clear(0.04, 0.08, 0.16, 1)
+
+  love.graphics.push()
+  love.graphics.translate(ox, oy)
+  love.graphics.scale(scale, scale)
+  snap:draw(1)
+
+  -- spawn ice cube (matches in-game player look)
+  local cx, cy = snap:tileCenter(SPAWN_COL, SPAWN_ROW)
+  local size = 26
+  love.graphics.setColor(0.66, 0.92, 1)
+  love.graphics.rectangle("fill", cx - size * 0.5, cy - size * 0.5, size, size, 6, 6)
+  love.graphics.setColor(0.18, 0.58, 0.86)
+  love.graphics.setLineWidth(2)
+  love.graphics.rectangle("line", cx - size * 0.5, cy - size * 0.5, size, size, 6, 6)
+  love.graphics.pop()
+
+  love.graphics.setCanvas(prevCanvas)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.setLineWidth(1)
+  return canvas
+end
+
+local function ensureLevelPreview(name)
+  if not levelPreviews[name] then
+    levelPreviews[name] = buildLevelPreview(name)
+  end
+  return levelPreviews[name]
+end
+
+local function maxLevelScroll()
+  local rows = math.ceil(math.max(1, #levelList) / CARD_COLS)
+  return math.max(0, rows - CARD_ROWS)
+end
+
 local function refreshLevelList()
+  refreshCardMetrics()
   levelList = Editor.listLevelNames()
+  clearLevelPreviews()
   if levelSelected > #levelList then
     levelSelected = math.max(1, #levelList)
   end
@@ -141,9 +252,9 @@ local function refreshLevelList()
   end
   for i = 1, #levelList do
     levelSlide[i] = levelSlide[i] or 0
+    ensureLevelPreview(levelList[i])
   end
-  local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
-  levelScroll = math.max(0, math.min(maxScroll, levelScroll))
+  levelScroll = math.max(0, math.min(maxLevelScroll(), levelScroll))
 end
 
 local function openLevelSelect()
@@ -459,6 +570,11 @@ end
 function love.resize(w, h)
   makeSnow(w, h)
   ensureCubeCanvas(cubeViewSize(w, h))
+  if state == "levels" then
+    refreshLevelList()
+  else
+    refreshCardMetrics(w, h)
+  end
 end
 
 local function menuPanelWidth(width)
@@ -595,30 +711,39 @@ local function easeOutCubic(t)
   return 1 - u * u * u
 end
 
-local function levelsPanelRect(width, height)
-  local pw = math.min(460, math.max(360, math.floor(width * 0.46)))
-  local rowH = 52
-  local slots = math.min(LEVEL_VISIBLE, math.max(1, #levelList))
-  local ph = 78 + slots * rowH + 48
-  local px = math.floor((width - pw) * 0.5)
-  local py = math.floor((height - ph) * 0.5)
-  return px, py, pw, ph, rowH, slots
+local function levelsGridMetrics(width, height)
+  local gridW = CARD_COLS * CARD_W + (CARD_COLS - 1) * CARD_GAP_X
+  local gridH = CARD_ROWS * CARD_H + (CARD_ROWS - 1) * CARD_GAP_Y
+  local gridX = math.floor((width - gridW) * 0.5)
+  local gridY = math.floor(TITLE_AREA + (height - TITLE_AREA - FOOTER_AREA - gridH) * 0.5)
+  gridY = math.max(TITLE_AREA + 8, gridY)
+  return gridX, gridY, gridW, gridH
+end
+
+local function levelCardRect(index, width, height)
+  local localIndex = index - levelScroll * CARD_COLS
+  if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
+    return nil
+  end
+  local col = ((localIndex - 1) % CARD_COLS)
+  local row = math.floor((localIndex - 1) / CARD_COLS)
+  local gridX, gridY = levelsGridMetrics(width, height)
+  local slideIn = math.floor((1 - easeOutCubic(intro)) * (20 + col * 8))
+  local x = gridX + col * (CARD_W + CARD_GAP_X)
+  local y = gridY + row * (CARD_H + CARD_GAP_Y) + slideIn
+  return x, y, CARD_W, CARD_H
 end
 
 local function levelItemHit(mx, my, width, height)
   if #levelList == 0 then
     return 0
   end
-  local px, py, pw, _, rowH, slots = levelsPanelRect(width, height)
-  local y0 = py + 70
-  for i = 1, slots do
-    local index = i + levelScroll
-    if index > #levelList then
-      break
-    end
-    local y = y0 + (i - 1) * rowH
-    if mx >= px + 16 and mx <= px + pw - 16 and my >= y and my <= y + rowH - 8 then
-      return index
+  local first = levelScroll * CARD_COLS + 1
+  local last = math.min(#levelList, first + CARD_COLS * CARD_ROWS - 1)
+  for i = first, last do
+    local x, y, w, h = levelCardRect(i, width, height)
+    if x and mx >= x and mx <= x + w and my >= y and my <= y + h then
+      return i
     end
   end
   return 0
@@ -629,29 +754,39 @@ local function drawStatusBadge(x, y, finished, alpha)
   love.graphics.setFont(fonts.small)
   local tw = fonts.small:getWidth(label)
   local th = fonts.small:getHeight()
-  local pad = finished and 24 or 16
-  local bw, bh = tw + pad, th + 8
-  local bx = x - bw
+  local pad = finished and 22 or 14
+  local bw, bh = tw + pad, th + 6
+  local bx = math.floor(x - bw * 0.5)
 
   if finished then
-    love.graphics.setColor(0.18, 0.42, 0.28, 0.85 * alpha)
+    love.graphics.setColor(0.18, 0.42, 0.28, 0.9 * alpha)
     love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
     love.graphics.setColor(0.45, 0.92, 0.62, 0.95 * alpha)
     love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
     love.graphics.setLineWidth(2)
-    love.graphics.line(bx + 7, y + bh * 0.55, bx + 10, y + bh * 0.72, bx + 15, y + bh * 0.32)
+    love.graphics.line(bx + 6, y + bh * 0.55, bx + 9, y + bh * 0.72, bx + 14, y + bh * 0.32)
     love.graphics.setLineWidth(1)
     love.graphics.setColor(0.92, 1.0, 0.95, alpha)
-    love.graphics.print(label, bx + 20, y + 3)
+    love.graphics.print(label, bx + 18, y + 2)
   else
-    love.graphics.setColor(0.22, 0.38, 0.55, 0.75 * alpha)
+    love.graphics.setColor(0.22, 0.38, 0.55, 0.8 * alpha)
     love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
     love.graphics.setColor(0.65, 0.82, 0.98, 0.7 * alpha)
     love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
     love.graphics.setColor(0.85, 0.94, 1.0, 0.9 * alpha)
-    love.graphics.print(label, bx + 8, y + 3)
+    love.graphics.print(label, bx + 7, y + 2)
   end
   return bw
+end
+
+local function keepLevelSelectionVisible()
+  local selectedRow = math.floor((levelSelected - 1) / CARD_COLS)
+  if selectedRow < levelScroll then
+    levelScroll = selectedRow
+  elseif selectedRow > levelScroll + CARD_ROWS - 1 then
+    levelScroll = selectedRow - CARD_ROWS + 1
+  end
+  levelScroll = math.max(0, math.min(maxLevelScroll(), levelScroll))
 end
 
 function love.update(dt)
@@ -701,14 +836,7 @@ function love.update(dt)
       local target = ((i == levelSelected) or (i == levelHover)) and 1 or 0
       levelSlide[i] = lerp(levelSlide[i] or 0, target, 1 - math.exp(-16 * dt))
     end
-    -- keep selection in view
-    if levelSelected < levelScroll + 1 then
-      levelScroll = levelSelected - 1
-    elseif levelSelected > levelScroll + LEVEL_VISIBLE then
-      levelScroll = levelSelected - LEVEL_VISIBLE
-    end
-    local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
-    levelScroll = math.max(0, math.min(maxScroll, levelScroll))
+    keepLevelSelectionVisible()
   end
 
   if state == "menu" then
@@ -984,95 +1112,116 @@ end
 local function drawLevels(width, height)
   drawAtmosphere(width, height)
   local e = easeOutCubic(intro)
-  local px, py, pw, ph, rowH, slots = levelsPanelRect(width, height)
-  py = py + math.floor((1 - e) * 14)
-  drawPanel(px, py, pw, ph, e)
 
-  -- soft sparkle accents
-  local spark = (0.35 + 0.45 * math.sin(elapsed * 3.2)) * e
-  love.graphics.setColor(0.85, 0.95, 1.0, spark * 0.55)
-  love.graphics.circle("fill", px + 28, py + 28, 2)
-  love.graphics.circle("fill", px + pw - 32, py + 34, 1.6)
-
+  -- floating title only (no big menu panel)
   love.graphics.setFont(fonts.title)
   local t = "Choose a Level"
-  local tx = math.floor((width - fonts.title:getWidth(t)) * 0.5)
-  love.graphics.setColor(0.06, 0.16, 0.30, e)
-  love.graphics.print(t, tx + 1, py + 16)
-  love.graphics.setColor(0.95, 0.98, 1.0, e)
-  love.graphics.print(t, tx, py + 15)
-
-  love.graphics.setColor(0.20, 0.38, 0.55, 0.5 * e)
-  love.graphics.rectangle("fill", px + 28, py + 52, pw - 56, 2)
+  local tw = fonts.title:getWidth(t)
+  local tx = math.floor((width - tw) * 0.5)
+  local ty = math.floor(22 + (1 - e) * 16 + math.sin(elapsed * 1.5) * 2)
+  love.graphics.setColor(0.45, 0.78, 1.0, 0.2 * e * titlePulse)
+  love.graphics.print(t, tx - 1, ty)
+  love.graphics.print(t, tx + 1, ty)
+  love.graphics.print(t, tx, ty - 1)
+  love.graphics.print(t, tx, ty + 1)
+  love.graphics.setColor(0.05, 0.14, 0.28, 0.65 * e)
+  love.graphics.print(t, tx + 2, ty + 3)
+  love.graphics.setColor(0.95, 0.98, 1.0, e * titlePulse)
+  love.graphics.print(t, tx, ty)
 
   if #levelList == 0 then
     love.graphics.setFont(fonts.credits)
     local empty = "No levels yet — try the editor!"
     love.graphics.setColor(0.78, 0.90, 1.0, 0.85 * e)
-    love.graphics.print(empty, math.floor((width - fonts.credits:getWidth(empty)) * 0.5), py + ph * 0.45)
+    love.graphics.print(empty, math.floor((width - fonts.credits:getWidth(empty)) * 0.5), height * 0.48)
   else
-    local y0 = py + 70
-    for i = 1, slots do
-      local index = i + levelScroll
-      local name = levelList[index]
-      if not name then
+    local first = levelScroll * CARD_COLS + 1
+    local last = math.min(#levelList, first + CARD_COLS * CARD_ROWS - 1)
+    local _, gridY, _, gridH = levelsGridMetrics(width, height)
+
+    for i = first, last do
+      local name = levelList[i]
+      local x, y, w, h = levelCardRect(i, width, height)
+      if not x then
         break
       end
-      local y = y0 + (i - 1) * rowH
-      local slide = levelSlide[index] or 0
+
+      local slide = levelSlide[i] or 0
       local active = slide > 0.15
-      local pulse = active and (0.85 + 0.15 * math.sin(elapsed * 5)) or 1
+      local pulse = active and (0.88 + 0.12 * math.sin(elapsed * 5)) or 1
       local finished = progress.finished[name] == true
-      local inset = math.floor(10 - 4 * slide)
-      local rowX = px + inset
-      local rowW = pw - inset * 2
-      local rowInnerH = rowH - 10
+      local lift = math.floor(slide * 6)
+      local cardY = y - lift
+      local a = e
+      local col = ((i - 1) % CARD_COLS)
+
+      -- staggered fade-in per card
+      local cardE = easeOutCubic(clamp((intro - 0.05 - col * 0.05) / 0.5, 0, 1))
+      a = a * cardE
+
+      -- each card is its own solid panel on the forest bg
+      drawPanel(x, cardY, w, h, a)
 
       if active then
-        drawRowHighlight(rowX, y, rowW, rowInnerH, e * pulse)
-        local cx = rowX + 16
-        local cy = y + math.floor(rowInnerH * 0.5)
-        love.graphics.setColor(0.45, 0.78, 1.0, 0.45 * e)
-        love.graphics.polygon("fill", cx - 2, cy - 10, cx + 14, cy, cx - 2, cy + 10)
-        love.graphics.setColor(1, 1, 1, e)
-        love.graphics.polygon("fill", cx, cy - 8, cx + 12, cy, cx, cy + 8)
+        love.graphics.setColor(0.85, 0.96, 1.0, 0.7 * a * pulse)
+        love.graphics.setLineWidth(3)
+        love.graphics.rectangle("line", x + 2, cardY + 2, w - 4, h - 4)
+        love.graphics.setLineWidth(1)
+        -- soft glow under selected card
+        love.graphics.setColor(0.45, 0.80, 1.0, 0.12 * a * pulse)
+        love.graphics.ellipse("fill", x + w * 0.5, cardY + h + 6, w * 0.42, 10)
       end
 
-      love.graphics.setFont(fonts.menu)
-      local label = prettyLevelName(name)
-      local th = fonts.menu:getHeight()
-      local lx = px + 44
-      local ly = y + math.floor((rowInnerH - th) * 0.5)
-      local labelA = (0.7 + 0.3 * slide) * e
+      -- preview fills the card (card is sized to fit it)
+      local preview = ensureLevelPreview(name)
+      local prevW = w - PREVIEW_PAD * 2
+      local prevH = math.floor(prevW * MAP_ROWS / MAP_COLS)
+      local prevX = x + PREVIEW_PAD
+      local prevY = cardY + PREVIEW_PAD
 
-      love.graphics.setColor(0.06, 0.16, 0.30, labelA)
+      love.graphics.setColor(0.05, 0.12, 0.20, a)
+      love.graphics.rectangle("fill", prevX - 2, prevY - 2, prevW + 4, prevH + 4)
+      love.graphics.setColor(0.55, 0.78, 0.95, 0.65 * a)
+      love.graphics.rectangle("line", prevX - 2, prevY - 2, prevW + 4, prevH + 4)
+
+      if preview then
+        love.graphics.setColor(1, 1, 1, a)
+        love.graphics.draw(preview, prevX, prevY, 0, prevW / preview:getWidth(), prevH / preview:getHeight())
+      end
+
+      -- name + badge in the strip under the preview
+      local label = prettyLevelName(name)
+      local labelFont = (#label > 12) and fonts.small or fonts.menu
+      love.graphics.setFont(labelFont)
+      local lx = math.floor(x + (w - labelFont:getWidth(label)) * 0.5)
+      local ly = prevY + prevH + 8
+      love.graphics.setColor(0.06, 0.16, 0.30, a)
       love.graphics.print(label, lx + 1, ly + 1)
-      love.graphics.setColor(0.95, 0.98, 1.0, labelA)
+      love.graphics.setColor(0.95, 0.98, 1.0, a)
       love.graphics.print(label, lx, ly)
 
-      local badgeY = y + math.floor((rowInnerH - (fonts.small:getHeight() + 8)) * 0.5)
-      drawStatusBadge(px + pw - 22, badgeY, finished, e)
+      drawStatusBadge(x + w * 0.5, ly + labelFont:getHeight() + 4, finished, a)
     end
 
-    -- scrollbar
-    local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
+    -- scrollbar on the right edge of the screen (not inside a menu box)
+    local maxScroll = maxLevelScroll()
     if maxScroll > 0 then
-      local trackX = px + pw - 14
-      local trackY = y0
-      local trackH = slots * rowH - 10
-      love.graphics.setColor(0.12, 0.24, 0.38, 0.55 * e)
-      love.graphics.rectangle("fill", trackX, trackY, 4, trackH, 2, 2)
-      local thumbH = math.max(18, trackH * (LEVEL_VISIBLE / #levelList))
+      local trackX = width - 22
+      local trackY = gridY
+      local trackH = gridH
+      love.graphics.setColor(0.08, 0.16, 0.28, 0.55 * e)
+      love.graphics.rectangle("fill", trackX, trackY, 5, trackH, 2, 2)
+      local thumbH = math.max(18, trackH * (CARD_ROWS / (maxScroll + CARD_ROWS)))
       local thumbY = trackY + (trackH - thumbH) * (levelScroll / maxScroll)
-      love.graphics.setColor(0.70, 0.88, 1.0, 0.85 * e)
-      love.graphics.rectangle("fill", trackX, thumbY, 4, thumbH, 2, 2)
+      love.graphics.setColor(0.70, 0.88, 1.0, 0.9 * e)
+      love.graphics.rectangle("fill", trackX, thumbY, 5, thumbH, 2, 2)
     end
   end
 
   love.graphics.setFont(fonts.small)
-  love.graphics.setColor(0.75, 0.88, 1.0, 0.75 * e)
-  local tip = "Enter to play  ·  Esc to go back"
-  love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), py + ph - 30)
+  love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
+  local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
+  love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
   drawSnow()
 end
@@ -1317,13 +1466,33 @@ function love.keypressed(key)
       love.window.setTitle("Ice Cube")
       playSfx(sfxClick)
     elseif #levelList > 0 then
-      if key == "up" or key == "w" then
+      if key == "left" or key == "a" then
         levelSelected = levelSelected - 1
         if levelSelected < 1 then levelSelected = #levelList end
+        keepLevelSelectionVisible()
         playSfx(sfxClick)
-      elseif key == "down" or key == "s" then
+      elseif key == "right" or key == "d" then
         levelSelected = levelSelected + 1
         if levelSelected > #levelList then levelSelected = 1 end
+        keepLevelSelectionVisible()
+        playSfx(sfxClick)
+      elseif key == "up" or key == "w" then
+        local myCol = ((levelSelected - 1) % CARD_COLS) + 1
+        levelSelected = levelSelected - CARD_COLS
+        if levelSelected < 1 then
+          local lastRowStart = math.floor((#levelList - 1) / CARD_COLS) * CARD_COLS
+          levelSelected = math.min(#levelList, lastRowStart + myCol)
+        end
+        keepLevelSelectionVisible()
+        playSfx(sfxClick)
+      elseif key == "down" or key == "s" then
+        local myCol = ((levelSelected - 1) % CARD_COLS) + 1
+        levelSelected = levelSelected + CARD_COLS
+        if levelSelected > #levelList then
+          levelSelected = myCol
+          if levelSelected > #levelList then levelSelected = 1 end
+        end
+        keepLevelSelectionVisible()
         playSfx(sfxClick)
       elseif key == "return" or key == "space" then
         playSfx(sfxClick)
@@ -1498,8 +1667,7 @@ end
 
 function love.wheelmoved(_, y)
   if state == "levels" and y ~= 0 then
-    local maxScroll = math.max(0, #levelList - LEVEL_VISIBLE)
-    levelScroll = math.max(0, math.min(maxScroll, levelScroll - y))
+    levelScroll = math.max(0, math.min(maxLevelScroll(), levelScroll - y))
     return
   end
   if state == "play" and editor.active then
