@@ -76,6 +76,7 @@ function Grid.new(size, columns, rows, fillGround)
     puzzlePieceTiles = {},
     puzzleCanvasTiles = {},
     puzzleDoorTiles = {},
+    pressureDoorTiles = {},
     pressurePlateTiles = {},
     pressureDoorOpen = false,
     wallTiles = {},
@@ -160,6 +161,7 @@ function Grid:occupiedBounds(padding)
   consider(self.puzzlePieceTiles)
   consider(self.puzzleCanvasTiles)
   consider(self.puzzleDoorTiles)
+  consider(self.pressureDoorTiles)
   consider(self.pressurePlateTiles)
   consider(self.wallTiles)
   consider(self.boulderTiles)
@@ -214,6 +216,7 @@ function Grid:erase(col, row)
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -232,6 +235,7 @@ function Grid:clear()
   self.puzzlePieceTiles = {}
   self.puzzleCanvasTiles = {}
   self.puzzleDoorTiles = {}
+  self.pressureDoorTiles = {}
   self.pressurePlateTiles = {}
   self.pressureDoorOpen = false
   self.wallTiles = {}
@@ -304,6 +308,7 @@ function Grid:addFire(col, row)
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -332,12 +337,11 @@ function Grid:addIce(col, row)
   self.waterTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
-  self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
-  self.pressurePlateTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
-  -- Keep boulder so ice can sit under it.
+  -- Keep boulder, puzzle pieces, and pressure plates so ice can sit under them.
   self.iceTiles[key] = { col = col, row = row }
 end
 
@@ -374,6 +378,7 @@ function Grid:addSnowflake(col, row)
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -414,6 +419,7 @@ function Grid:addTea(col, row)
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -438,11 +444,11 @@ function Grid:addPuzzlePiece(col, row)
   self:setGround(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
-  self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -479,6 +485,7 @@ function Grid:addPuzzleCanvas(col, row)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -564,6 +571,7 @@ function Grid:addPuzzleDoor(col, row)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -582,6 +590,34 @@ function Grid:openPuzzleDoors()
   self.puzzleDoorTiles = {}
 end
 
+function Grid:addPressureDoor(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.waterTiles[key] = nil
+  self.fireTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleCanvasTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
+  self.pressurePlateTiles[key] = nil
+  self.pressureDoorTiles[key] = { col = col, row = row }
+end
+
+function Grid:removePressureDoor(col, row)
+  self.pressureDoorTiles[self:key(col, row)] = nil
+end
+
+function Grid:isPressureDoor(col, row)
+  return self.pressureDoorTiles[self:key(col, row)] ~= nil
+end
+
 function Grid:addPressurePlate(col, row)
   if not self:isInside(col, row) then
     return
@@ -590,12 +626,12 @@ function Grid:addPressurePlate(col, row)
   local key = self:key(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
-  self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
   self.pressurePlateTiles[key] = { col = col, row = row, pressed = false }
@@ -650,6 +686,7 @@ function Grid:addWall(col, row, texture, lean, options)
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.boulderTiles[key] = nil
 
@@ -809,6 +846,7 @@ function Grid:addBoulder(col, row, options)
   self.puzzlePieceTiles[key] = nil
   self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = {
@@ -846,7 +884,10 @@ function Grid:isBlocking(col, row, sizeRatio)
   if self:isBoulderTile(col, row) then
     return true
   end
-  if self:isPuzzleDoor(col, row) and not self:isPressureDoorOpen() then
+  if self:isPuzzleDoor(col, row) and not self:areAllCanvasesComplete() then
+    return true
+  end
+  if self:isPressureDoor(col, row) and not self:isPressureDoorOpen() then
     return true
   end
   if not self:isWallTile(col, row) then
@@ -986,6 +1027,12 @@ function Grid:serialize()
         cells[col] = "T"
       elseif self:isPuzzleDoor(col, row) then
         cells[col] = "L"
+      elseif self:isPressureDoor(col, row) then
+        cells[col] = "R"
+      elseif self:isPressurePlate(col, row) and self:isIceTile(col, row) then
+        cells[col] = "r"
+      elseif self:isPuzzlePiece(col, row) and self:isIceTile(col, row) then
+        cells[col] = "q"
       elseif self:isPressurePlate(col, row) then
         cells[col] = "K"
       elseif self:isPuzzleCanvas(col, row) then
@@ -995,8 +1042,6 @@ function Grid:serialize()
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
         cells[col] = boulder.cracked and "Q" or "O"
-      elseif self:isPressurePlate(col, row) and self:isIceTile(col, row)then
-        cells[col] = "K" and "I"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
@@ -1101,6 +1146,14 @@ function Grid:load(serialized)
         self:addPuzzleDoor(col, row)
       elseif cell == "K" then
         self:addPressurePlate(col, row)
+      elseif cell == "R" then
+        self:addPressureDoor(col, row)
+      elseif cell == "r" then
+        self:addIce(col, row)
+        self:addPressurePlate(col, row)
+      elseif cell == "q" then
+        self:addIce(col, row)
+        self:addPuzzlePiece(col, row)
       elseif cell == "B" then
         self:addBoulder(col, row)
       elseif cell == "P" then
@@ -1305,24 +1358,57 @@ local function drawPuzzleDoorAt(x, y, size, zoom, side, open)
   if open then
     love.graphics.setColor(0.025, 0.05, 0.08, 0.96)
     love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.28, 0.62, 0.72, 0.9)
+    love.graphics.setColor(0.28, 0.62, 0.95, 0.9)
     love.graphics.setLineWidth(1.5 / zoom)
     love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.35, 0.86, 0.72, 0.75)
+    love.graphics.setColor(0.45, 0.82, 1.0, 0.75)
     love.graphics.setLineWidth(1 / zoom)
     love.graphics.line(dx + 4, dy + 4, dx + dw - 4, dy + 4)
   else
-    love.graphics.setColor(0.12, 0.12, 0.14, 0.98)
+    love.graphics.setColor(0.06, 0.16, 0.34, 0.98)
     love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.35, 0.35, 0.40, 0.95)
+    love.graphics.setColor(0.28, 0.62, 0.95, 0.95)
     love.graphics.setLineWidth(1.5 / zoom)
     love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.55, 0.55, 0.60, 0.85)
+    love.graphics.setColor(0.55, 0.80, 1.0, 0.85)
     love.graphics.setLineWidth(2 / zoom)
     local barX = dx + dw * 0.5
     love.graphics.line(barX, dy + 4, barX, dy + dh - 4)
     love.graphics.line(dx + 4, dy + dh * 0.45, dx + dw - 4, dy + dh * 0.45)
     love.graphics.circle("fill", barX + dw * 0.18, dy + dh * 0.45, 2.5)
+  end
+end
+
+local function drawPressureDoorAt(x, y, size, zoom, side, open)
+  local pad = size * (side and 0.08 or 0.1)
+  local dx = x + pad
+  local dy = y + pad
+  local dw = size - pad * 2
+  local dh = size - pad * 2
+  if side then
+    dy = y + size * 0.05
+    dh = size * 0.9
+  end
+  if open then
+    love.graphics.setColor(0.03, 0.10, 0.07, 0.96)
+    love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
+    love.graphics.setColor(0.30, 0.88, 0.60, 0.9)
+    love.graphics.setLineWidth(1.5 / zoom)
+    love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
+    love.graphics.setColor(0.42, 1.0, 0.70, 0.8)
+    love.graphics.setLineWidth(1 / zoom)
+    love.graphics.line(dx + dw * 0.22, dy + dh * 0.5, dx + dw * 0.78, dy + dh * 0.5)
+    love.graphics.line(dx + dw * 0.50, dy + dh * 0.32, dx + dw * 0.78, dy + dh * 0.5, dx + dw * 0.50, dy + dh * 0.68)
+  else
+    love.graphics.setColor(0.10, 0.22, 0.16, 0.98)
+    love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
+    love.graphics.setColor(0.30, 0.78, 0.52, 0.95)
+    love.graphics.setLineWidth(1.5 / zoom)
+    love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
+    love.graphics.setColor(0.52, 0.95, 0.70, 0.9)
+    love.graphics.setLineWidth(2 / zoom)
+    love.graphics.line(dx + dw * 0.28, dy + dh * 0.5, dx + dw * 0.72, dy + dh * 0.5)
+    love.graphics.line(dx + dw * 0.5, dy + dh * 0.30, dx + dw * 0.5, dy + dh * 0.70)
   end
 end
 
@@ -1687,10 +1773,17 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     end
   end
 
+  for _, door in pairs(self.pressureDoorTiles) do
+    if isVisible(door) and include(door.col, door.row) then
+      local x, y = self:tileOrigin(door.col, door.row)
+      drawPressureDoorAt(x, y, self.size, zoom, false, self:isPressureDoorOpen())
+    end
+  end
+
   for _, door in pairs(self.puzzleDoorTiles) do
     if isVisible(door) and include(door.col, door.row) then
       local x, y = self:tileOrigin(door.col, door.row)
-      drawPuzzleDoorAt(x, y, self.size, zoom, false, self:isPressureDoorOpen())
+      drawPuzzleDoorAt(x, y, self.size, zoom, false, self:areAllCanvasesComplete())
     end
   end
 
@@ -2084,21 +2177,27 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
 
       if self.teaTiles[key] then
         drawTeaCup(centerX, floorTop, zoom, true)
-      end
+       end
 
       if self.puzzlePieceTiles[key] then
         drawPuzzlePieceShape(centerX, floorTop - size * 0.28, size, zoom, 1)
-      end
+       end
 
       if self.puzzleCanvasTiles[key] then
         drawPuzzleCanvasAt(centerX, floorTop, size, zoom, self.puzzleCanvasTiles[key].slots, true)
-      end
+       end
 
-      if self.puzzleDoorTiles[key] then
-        local x = (col - 1) * size
-        local y = floorTop - size
-        drawPuzzleDoorAt(x, y, size, zoom, true, self:isPressureDoorOpen())
-      end
+       if self.pressureDoorTiles[key] then
+         local x = (col - 1) * size
+         local y = floorTop - size
+         drawPressureDoorAt(x, y, size, zoom, true, self:isPressureDoorOpen())
+       end
+
+       if self.puzzleDoorTiles[key] then
+         local x = (col - 1) * size
+         local y = floorTop - size
+         drawPuzzleDoorAt(x, y, size, zoom, true, self:areAllCanvasesComplete())
+       end
 
       local boulder = self.boulderTiles[key]
       if boulder then

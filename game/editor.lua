@@ -17,7 +17,7 @@ local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
-local LEGEND_H = 120
+local LEGEND_H = 132
 
 -- Single source of truth: add a tile tool here (+ applyTool / grid draw)
 -- and its left-panel icon is snapshotted automatically.
@@ -30,7 +30,8 @@ local TOOLS = {
   { name = "puzzle_piece", label = "Puzzle Piece", icon = "tile" },
   { name = "puzzle_canvas", label = "Puzzle Canvas", icon = "tile" },
   { name = "pressure_plate", label = "Pressure Plate", icon = "tile" },
-  { name = "puzzle_door", label = "Door", icon = "tile" },
+  { name = "pressure_door", label = "Pressure Door", icon = "pressure_door" },
+  { name = "puzzle_door", label = "Puzzle Door", icon = "puzzle_door" },
   { name = "side_wall", label = "Side Wall", icon = "tile" },
   { name = "front_wall", label = "Front Wall", icon = "tile" },
   { name = "half_wall", label = "Half Wall", icon = "tile" },
@@ -220,9 +221,9 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     love.graphics.setLineWidth(1)
     love.graphics.line(cx - plateW * 0.22, cy, cx + plateW * 0.22, cy)
   elseif tool == "puzzle_door" then
-    withAlpha(0.12, 0.12, 0.14, 0.98, alpha)
+    withAlpha(0.06, 0.16, 0.34, 0.98, alpha)
     love.graphics.rectangle("fill", x + 3, y + 3, size - 6, size - 6, 2, 2)
-    withAlpha(0.55, 0.55, 0.60, 0.9, alpha)
+    withAlpha(0.28, 0.62, 0.95, 0.9, alpha)
     love.graphics.setLineWidth(2)
     love.graphics.line(cx, y + 6, cx, y + size - 6)
     love.graphics.line(x + 6, cy, x + size - 6, cy)
@@ -356,6 +357,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addPuzzleCanvas(col, row)
   elseif tool == "pressure_plate" then
     grid:addPressurePlate(col, row)
+  elseif tool == "pressure_door" then
+    grid:addPressureDoor(col, row)
   elseif tool == "puzzle_door" then
     grid:addPuzzleDoor(col, row)
   elseif tool == "side_wall" then
@@ -428,6 +431,23 @@ local function drawActionIcon(kind, size)
     love.graphics.rectangle("fill", x + w * 0.52, y + 2, w * 0.38, w * 0.88, 1, 1)
     love.graphics.setColor(0.92, 0.78, 0.58, 1)
     love.graphics.rectangle("fill", x + w * 0.52, y + 2, w * 0.38, 3, 1, 1)
+  elseif kind == "pressure_door" then
+    love.graphics.setColor(0.12, 0.36, 0.24, 1)
+    love.graphics.rectangle("fill", x + 2, y + 1, w - 4, w - 2, 2, 2)
+    love.graphics.setColor(0.36, 0.92, 0.62, 1)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", x + 3, y + 2, w - 6, w - 4, 2, 2)
+    love.graphics.line(x + w * 0.5, y + w * 0.30, x + w * 0.5, y + w * 0.70)
+    love.graphics.line(x + w * 0.28, y + w * 0.50, x + w * 0.72, y + w * 0.50)
+  elseif kind == "puzzle_door" then
+    love.graphics.setColor(0.20, 0.22, 0.50, 1)
+    love.graphics.rectangle("fill", x + 2, y + 1, w - 4, w - 2, 2, 2)
+    love.graphics.setColor(0.58, 0.62, 1.0, 1)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", x + 3, y + 2, w - 6, w - 4, 2, 2)
+    love.graphics.line(x + w * 0.24, y + w * 0.46, x + w * 0.76, y + w * 0.46)
+    love.graphics.line(x + w * 0.50, y + w * 0.46, x + w * 0.50, y + w * 0.74)
+    love.graphics.circle("fill", x + w * 0.67, y + w * 0.58, w * 0.08)
   end
 end
 
@@ -1248,10 +1268,14 @@ function Editor:keypressed(key, grid, camera)
     self.tool = "puzzle_canvas"
     self.loadDropdownOpen = false
     self:setStatus("Puzzle canvas · 2 slots · completing opens doors / unlocks tea")
+  elseif key == "u" then
+    self.tool = "pressure_door"
+    self.loadDropdownOpen = false
+    self:setStatus("Pressure door · opens only from the pressure plate")
   elseif key == "=" then
     self.tool = "puzzle_door"
     self.loadDropdownOpen = false
-    self:setStatus("Door · opens while a pressure plate is pressed; canvas can also unlock it")
+    self:setStatus("Puzzle door · opens only when the puzzle canvas is complete")
   elseif key == "6" then
     self.tool = "side_wall"
     self.loadDropdownOpen = false
@@ -1592,8 +1616,10 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.42, 0.36, 0.28, 0.95)
       elseif tool.name == "pressure_plate" then
         love.graphics.setColor(0.20, 0.52, 0.58, 0.95)
+       elseif tool.name == "pressure_door" then
+         love.graphics.setColor(0.16, 0.48, 0.34, 0.95)
       elseif tool.name == "puzzle_door" then
-        love.graphics.setColor(0.28, 0.28, 0.32, 0.95)
+         love.graphics.setColor(0.28, 0.30, 0.58, 0.95)
       elseif tool.name == "side_wall" then
         love.graphics.setColor(0.32, 0.48, 0.62, 0.9)
       elseif tool.name == "front_wall" then
@@ -1841,7 +1867,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  J Piece  ·  P Canvas  ·  = Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Piece  ·  P Canvas  ·  U Pressure Door  ·  = Puzzle Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,
@@ -1863,7 +1889,7 @@ function Editor:draw(grid, camera)
     "center"
   )
   love.graphics.printf(
-    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu",
+    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu  ·  U Pressure Door  ·  = Puzzle Door",
     12,
     legendY + 67,
     screenWidth - 24,

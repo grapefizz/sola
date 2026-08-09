@@ -232,6 +232,7 @@ local function buildLevelPreview(name)
   snap:removePuzzlePiece(SPAWN_COL, SPAWN_ROW)
   snap:removePuzzleCanvas(SPAWN_COL, SPAWN_ROW)
   snap:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
+  snap:removePressureDoor(SPAWN_COL, SPAWN_ROW)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
   snap:addWater(SPAWN_COL, SPAWN_ROW)
 
@@ -2009,10 +2010,16 @@ function love.keypressed(key)
     end
 
     if key == "e" then
-      editor:setActive(not editor.active)
-      grid:clearWater()
-      if not editor.active then
+      if editor.active then
+        editor:setActive(false)
+        grid:clearWater()
         restartRun()
+      else
+        editor:setActive(true)
+        grid:clearWater()
+        if currentLevelName then
+          editor:loadLevel(grid, currentLevelName)
+        end
       end
       return
     end
