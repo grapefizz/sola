@@ -29,11 +29,10 @@ local TOOLS = {
   { name = "ice", label = "Ice Floor", icon = "tile" },
   { name = "snowflake", label = "Snowflake", icon = "tile" },
   { name = "tea", label = "Iced Tea Goal", icon = "tile" },
-  { name = "puzzle_piece", label = "Puzzle Piece", icon = "tile" },
-  { name = "puzzle_canvas", label = "Puzzle Canvas", icon = "tile" },
+  { name = "puzzle_piece", label = "Key Half", icon = "tile" },
   { name = "pressure_plate", label = "Pressure Plate", icon = "tile" },
   { name = "pressure_door", label = "Pressure Door", icon = "pressure_door" },
-  { name = "puzzle_door", label = "Puzzle Door", icon = "puzzle_door" },
+  { name = "puzzle_door", label = "Key Door", icon = "puzzle_door" },
   { name = "side_wall", label = "Side Wall", icon = "tile" },
   { name = "front_wall", label = "Front Wall", icon = "tile" },
   { name = "half_wall", label = "Half Wall", icon = "tile" },
@@ -75,22 +74,55 @@ local function getPreviewSprites()
     ice = love.graphics.newImage("assets/ice.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
     fire = love.graphics.newImage("assets/fire.png"),
+    keyTop = love.graphics.newImage("assets/key-top.png"),
+    keyDown = love.graphics.newImage("assets/key-down.png"),
   }
   previewSprites.ground:setFilter("linear", "linear")
   previewSprites.ice:setFilter("linear", "linear")
   previewSprites.snowflake:setFilter("linear", "linear")
   previewSprites.fire:setFilter("linear", "linear")
+  previewSprites.keyTop:setFilter("linear", "linear")
+  previewSprites.keyDown:setFilter("linear", "linear")
   return previewSprites
+end
+
+local keySectionPreviewQuads = {}
+
+local function getKeySectionPreviewQuad(image, section, sideView)
+  local cacheKey = (sideView and "s:" or "t:") .. section
+  if keySectionPreviewQuads[cacheKey] then
+    return keySectionPreviewQuads[cacheKey]
+  end
+  local iw, ih = image:getDimensions()
+  local quad
+  if sideView then
+    local split = math.floor(ih * 0.48)
+    if section == "down" then
+      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
+    else
+      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
+    end
+  else
+    local split = math.floor(iw * 0.48)
+    if section == "down" then
+      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
+    else
+      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
+    end
+  end
+  keySectionPreviewQuads[cacheKey] = quad
+  return quad
 end
 
 local function withAlpha(r, g, b, a, alpha)
   love.graphics.setColor(r, g, b, a * alpha)
 end
 
-local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfWallFill, wallDepth)
+local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfWallFill, wallDepth, keyVariant)
   alpha = alpha or 1
   halfWallFill = halfWallFill or 0.5
   wallDepth = wallDepth or "front"
+  keyVariant = keyVariant == "down" and "down" or "top"
   local x = cx - size / 2
   local y = cy - size / 2
   local sprites = getPreviewSprites()
@@ -170,46 +202,14 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
       cx - 7 * zoom, cy + 13 * zoom
     )
   elseif tool == "puzzle_piece" then
-    local s = size * 0.36
-    withAlpha(0.08, 0.08, 0.10, 0.98, alpha)
-    love.graphics.polygon(
-      "fill",
-      cx - s, cy - s * 0.55,
-      cx - s * 0.22, cy - s * 0.55,
-      cx - s * 0.22, cy - s,
-      cx + s * 0.22, cy - s,
-      cx + s * 0.22, cy - s * 0.55,
-      cx + s, cy - s * 0.55,
-      cx + s, cy + s * 0.15,
-      cx + s * 0.55, cy + s * 0.15,
-      cx + s * 0.55, cy + s * 0.55,
-      cx + s, cy + s * 0.55,
-      cx + s, cy + s,
-      cx - s, cy + s
-    )
-  elseif tool == "puzzle_canvas" then
-    local frame = size * 0.78
-    local fx = cx - frame * 0.5
-    local fy = cy - frame * 0.5
-    withAlpha(0.18, 0.16, 0.14, 0.95, alpha)
-    love.graphics.rectangle("fill", fx, fy, frame, frame, 3, 3)
-    withAlpha(0.55, 0.48, 0.38, 0.95, alpha)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", fx, fy, frame, frame, 3, 3)
-    local slotW = frame * 0.36
-    local slotH = frame * 0.58
-    local gap = frame * 0.08
-    withAlpha(0.10, 0.10, 0.12, 0.55, alpha)
-    love.graphics.rectangle("fill", fx + gap, fy + (frame - slotH) * 0.5, slotW, slotH, 2, 2)
-    love.graphics.rectangle(
-      "fill",
-      fx + frame - gap - slotW,
-      fy + (frame - slotH) * 0.5,
-      slotW,
-      slotH,
-      2,
-      2
-    )
+    local sideView = Perspective.isSide()
+    local img = sideView and sprites.keyDown or sprites.keyTop
+    local quad = getKeySectionPreviewQuad(img, keyVariant, sideView)
+    local _, _, qw, qh = quad:getViewport()
+    local target = size * 0.78
+    local scale = target / math.max(qw, qh)
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(img, quad, cx, cy, 0, scale, scale, qw * 0.5, qh * 0.5)
   elseif tool == "pressure_plate" then
     local plateW = size * 0.72
     local plateH = size * 0.22
@@ -324,15 +324,15 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
   end
 end
 
-local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom, halfWallFill, wallDepth)
-  drawToolVisual(tool, wallFacing, cx, cy, size, zoom, 0.5, halfWallFill, wallDepth)
+local function drawToolGhost(tool, wallFacing, cx, cy, size, zoom, halfWallFill, wallDepth, keyVariant)
+  drawToolVisual(tool, wallFacing, cx, cy, size, zoom, 0.5, halfWallFill, wallDepth, keyVariant)
 end
 
 local function isFrontWallTool(tool)
   return tool == "front_wall" or tool == "half_wall" or tool == "cracked_wall"
 end
 
-local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, wallDepth)
+local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, wallDepth, keyVariant)
   wallDepth = wallDepth or "front"
   if tool == "ground" then
     grid:setGround(col, row)
@@ -355,9 +355,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
   elseif tool == "tea" then
     grid:addTea(col, row)
   elseif tool == "puzzle_piece" then
-    grid:addPuzzlePiece(col, row)
-  elseif tool == "puzzle_canvas" then
-    grid:addPuzzleCanvas(col, row)
+    grid:addPuzzlePiece(col, row, keyVariant == "down" and "down" or "top")
   elseif tool == "pressure_plate" then
     grid:addPressurePlate(col, row)
   elseif tool == "pressure_door" then
@@ -462,7 +460,7 @@ local function drawActionIcon(kind, size)
   end
 end
 
-local function iconCacheKey(toolName, wallFacing, halfWallFill, wallDepth)
+local function iconCacheKey(toolName, wallFacing, halfWallFill, wallDepth, keyVariant)
   if toolName == "side_wall" then
     return toolName .. ":" .. (wallFacing or "left")
   end
@@ -472,6 +470,9 @@ local function iconCacheKey(toolName, wallFacing, halfWallFill, wallDepth)
   end
   if toolName == "front_wall" or toolName == "cracked_wall" then
     return toolName .. ":" .. (wallDepth or "front")
+  end
+  if toolName == "puzzle_piece" then
+    return toolName .. ":" .. (keyVariant == "down" and "down" or "top")
   end
   return toolName
 end
@@ -487,7 +488,7 @@ local function clearToolIcon(toolName)
   end
 end
 
-local function buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
+local function buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth, keyVariant)
   local canvas = love.graphics.newCanvas(ICON_SIZE, ICON_SIZE)
   canvas:setFilter("linear", "linear")
 
@@ -524,7 +525,8 @@ local function buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
         snap,
         wallFacing or "left",
         halfWallFill or 0.5,
-        wallDepth or "front"
+        wallDepth or "front",
+        keyVariant or "top"
       )
       local prevMode = Perspective.mode
       Perspective.set("topdown")
@@ -548,10 +550,10 @@ local function buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
   return canvas
 end
 
-local function ensureToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
-  local key = iconCacheKey(toolEntry.name, wallFacing, halfWallFill, wallDepth)
+local function ensureToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth, keyVariant)
+  local key = iconCacheKey(toolEntry.name, wallFacing, halfWallFill, wallDepth, keyVariant)
   if not toolIconCache[key] then
-    toolIconCache[key] = buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth)
+    toolIconCache[key] = buildToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth, keyVariant)
   end
   return toolIconCache[key]
 end
@@ -751,6 +753,7 @@ function Editor.new(spawnCol, spawnRow)
     tool = "ground",
     wallFacing = "left",
     wallDepth = "front",
+    keyVariant = "top",
     halfWallFill = 0.5,
     spawnCol = spawnCol,
     spawnRow = spawnRow,
@@ -1033,7 +1036,7 @@ function Editor:applyTool(tool, col, row, grid)
     return
   end
 
-  placeToolOnGrid(tool, col, row, grid, self.wallFacing, self.halfWallFill, self.wallDepth)
+  placeToolOnGrid(tool, col, row, grid, self.wallFacing, self.halfWallFill, self.wallDepth, self.keyVariant)
 end
 
 function Editor:paintAt(x, y, button, grid, camera)
@@ -1206,6 +1209,14 @@ function Editor:mousepressed(x, y, button, grid, camera)
               .. math.floor(self.halfWallFill * 100 + 0.5)
               .. "% · R = In Front/Behind · [ ] / Shift+Wheel resize"
           )
+        elseif entry.name == "puzzle_piece" then
+          self:setStatus(
+            "Key half · "
+              .. (self.keyVariant == "down" and "Bottom" or "Top")
+              .. " section · R toggles Top/Bottom · assemble both for full key"
+          )
+        elseif entry.name == "puzzle_door" then
+          self:setStatus("Key door · walk into it while holding a full key")
         end
       end
 
@@ -1360,11 +1371,11 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "j" then
     self.tool = "puzzle_piece"
     self.loadDropdownOpen = false
-    self:setStatus("Puzzle piece · pick up one at a time, place on canvas")
-  elseif key == "p" then
-    self.tool = "puzzle_canvas"
-    self.loadDropdownOpen = false
-    self:setStatus("Puzzle canvas · 2 slots · completing opens doors / unlocks tea")
+    self:setStatus(
+      "Key half · "
+        .. (self.keyVariant == "down" and "Bottom" or "Top")
+        .. " section · R toggles Top/Bottom · pick one up, touch the other to assemble"
+    )
   elseif key == "u" then
     self.tool = "pressure_door"
     self.loadDropdownOpen = false
@@ -1372,7 +1383,7 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "=" then
     self.tool = "puzzle_door"
     self.loadDropdownOpen = false
-    self:setStatus("Puzzle door · opens only when the puzzle canvas is complete")
+    self:setStatus("Key door · walk into it while holding a full key")
   elseif key == "t" then
     self.loadDropdownOpen = false
     self:openTimeEditor()
@@ -1435,6 +1446,10 @@ function Editor:keypressed(key, grid, camera)
       self.wallFacing = self.wallFacing == "left" and "right" or "left"
       clearToolIcon("side_wall")
       self:setStatus("Side wall facing: " .. self.wallFacing)
+    elseif self.tool == "puzzle_piece" then
+      self.keyVariant = self.keyVariant == "down" and "top" or "down"
+      clearToolIcon("puzzle_piece")
+      self:setStatus("Key half: " .. (self.keyVariant == "down" and "Bottom section" or "Top section"))
     elseif isFrontWallTool(self.tool) then
       self.wallDepth = self.wallDepth == "behind" and "front" or "behind"
       clearToolIcon("front_wall")
@@ -1446,7 +1461,7 @@ function Editor:keypressed(key, grid, camera)
           or "Front walls: IN FRONT of ground"
       )
     else
-      self:setStatus("R: Side Wall = Left/Right · Front/Half/Cracked = In Front/Behind")
+      self:setStatus("R: Side Wall = Left/Right · Key Half = Top/Bottom · Front/Half/Cracked = In Front/Behind")
     end
 
   elseif key == "v" then
@@ -1653,7 +1668,8 @@ function Editor:draw(grid, camera)
       ghostSize,
       camera.zoom,
       self.halfWallFill,
-      self.wallDepth
+      self.wallDepth,
+      self.keyVariant
     )
 
     love.graphics.setColor(1, 1, 1, 0.55)
@@ -1712,9 +1728,7 @@ function Editor:draw(grid, camera)
       if tool.name == "snowflake" then
         love.graphics.setColor(0.20, 0.55, 0.90, 0.9)
       elseif tool.name == "puzzle_piece" then
-        love.graphics.setColor(0.18, 0.18, 0.22, 0.95)
-      elseif tool.name == "puzzle_canvas" then
-        love.graphics.setColor(0.42, 0.36, 0.28, 0.95)
+        love.graphics.setColor(0.72, 0.58, 0.22, 0.95)
       elseif tool.name == "pressure_plate" then
         love.graphics.setColor(0.20, 0.52, 0.58, 0.95)
        elseif tool.name == "pressure_door" then
@@ -1754,7 +1768,7 @@ function Editor:draw(grid, camera)
       4
     )
 
-    local icon = ensureToolIcon(tool, self.wallFacing, self.halfWallFill, self.wallDepth)
+    local icon = ensureToolIcon(tool, self.wallFacing, self.halfWallFill, self.wallDepth, self.keyVariant)
     local iconX = BUTTON_X + ICON_PAD
     local iconY = y + math.floor((BUTTON_H - ICON_SIZE) * 0.5)
 
@@ -1776,6 +1790,8 @@ function Editor:draw(grid, camera)
       label = "Side Zone"
     elseif tool.name == "side_wall" then
       label = "Side (" .. (self.wallFacing == "right" and "Right" or "Left") .. ")"
+    elseif tool.name == "puzzle_piece" then
+      label = "Key Half · " .. (self.keyVariant == "down" and "Bottom" or "Top")
     elseif isFrontWallTool(tool.name) then
       label = tool.label .. (self.wallDepth == "behind" and " · Behind" or " · Front")
     end
@@ -1970,7 +1986,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Piece  ·  P Canvas  ·  U Pressure Door  ·  = Puzzle Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Key Half  ·  U Pressure Door  ·  = Key Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,
@@ -1978,7 +1994,7 @@ function Editor:draw(grid, camera)
   )
   love.graphics.setColor(0.58, 0.75, 0.9)
   love.graphics.printf(
-    "Left-drag Paint  ·  Shift+drag Rect  ·  Right-drag Erase  ·  R = Side L/R or Front Behind/In-Front  ·  [ ] Half",
+    "Left-drag Paint  ·  Shift+drag Rect  ·  Right-drag Erase  ·  R = Side L/R · Key Top/Bottom · Front Behind/In-Front  ·  [ ] Half",
     12,
     legendY + 27,
     screenWidth - 24,
@@ -1992,7 +2008,7 @@ function Editor:draw(grid, camera)
     "center"
   )
   love.graphics.printf(
-    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu  ·  U Pressure Door  ·  = Puzzle Door",
+    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu  ·  U Pressure Door  ·  = Key Door",
     12,
     legendY + 67,
     screenWidth - 24,
@@ -2001,10 +2017,12 @@ function Editor:draw(grid, camera)
   local rHint
   if self.tool == "side_wall" then
     rHint = "R → Side facing: " .. self.wallFacing
+  elseif self.tool == "puzzle_piece" then
+    rHint = "R → Key half: " .. (self.keyVariant == "down" and "Bottom section" or "Top section")
   elseif isFrontWallTool(self.tool) then
     rHint = "R → Wall depth: " .. (self.wallDepth == "behind" and "Behind ground" or "In front of ground")
   else
-    rHint = "R → Side = Left/Right · Front/Half/Cracked = In Front/Behind"
+    rHint = "R → Side = Left/Right · Key Half = Top/Bottom · Front/Half/Cracked = In Front/Behind"
   end
   love.graphics.printf(
     rHint,
