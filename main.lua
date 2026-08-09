@@ -155,7 +155,7 @@ local grid, player, camera, editor
 
 -- Smooth camera follow
 local cameraFollowX, cameraFollowY
-local cameraFollowSpeed = 10
+local cameraFollowSpeed = 6.5
 local GAMEPLAY_MIN_ZOOM = 3.25
 local GAMEPLAY_MAX_ZOOM = 4
 local cameraPerspective
@@ -273,7 +273,23 @@ local function buildLevelPreview(name)
 
   local prevCanvas = love.graphics.getCanvas()
   love.graphics.setCanvas(canvas)
-  love.graphics.clear(0.04, 0.08, 0.16, 1)
+  if menuBg then
+    love.graphics.clear(0, 0, 0, 0)
+    local bgScale = math.max(pw / menuBgW, ph / menuBgH)
+    local drawW = menuBgW * bgScale
+    local drawH = menuBgH * bgScale
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(
+      menuBg,
+      (pw - drawW) * 0.5,
+      (ph - drawH) * 0.5,
+      0,
+      bgScale,
+      bgScale
+    )
+  else
+    love.graphics.clear(0.04, 0.08, 0.16, 1)
+  end
 
   love.graphics.push()
   love.graphics.translate(ox, oy)
@@ -1214,7 +1230,8 @@ local function updatePlayScreen(dt, width, height)
 
   if playOverlay ~= "pause" then
     player:update(dt, grid)
-    local cameraX, cameraY = grid:tileCenter(player.col, player.row)
+    local drawCol, drawRow = player:getDrawState()
+    local cameraX, cameraY = grid:tileCenter(drawCol, drawRow)
     local perspectiveMode = playerPerspectiveMode()
     if perspectiveMode ~= cameraPerspective then
       -- Entering a differently painted zone hands the camera to that view.
@@ -1313,6 +1330,26 @@ local function drawAtmosphere(width, height)
   love.graphics.rectangle("fill", 0, 0, width, 56)
   setUiColor("shadow", 0.72)
   love.graphics.rectangle("fill", 0, height - 64, width, 64)
+end
+
+-- Same cave art as the menu, heavily dimmed so the level stays readable.
+local function drawPlayBackground(width, height)
+  local scale = math.max(width / menuBgW, height / menuBgH)
+  local drawH = menuBgH * scale
+  local tileW = menuBgW * scale
+  local y = (height - drawH) * 0.5
+  local scroll = (elapsed * 12) % tileW
+
+  love.graphics.setColor(1, 1, 1, 1)
+  local x = -scroll
+  while x < width do
+    love.graphics.draw(menuBg, x, y, 0, scale, scale)
+    x = x + tileW
+  end
+
+  love.graphics.setColor(0.01, 0.02, 0.06, 0.88)
+  love.graphics.rectangle("fill", 0, 0, width, height)
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 local function drawMenuCube(width, height)
@@ -1773,6 +1810,7 @@ function love.draw()
   if state == "play" then
     love.graphics.setBackgroundColor(0.04, 0.08, 0.16)
     love.graphics.clear(0.04, 0.08, 0.16)
+    drawPlayBackground(width, height)
 
     camera:attach()
     if editor.active then

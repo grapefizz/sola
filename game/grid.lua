@@ -1933,11 +1933,7 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
       and tile.row <= maxRow + padding
   end
 
-  -- Skip full-canvas clear when compositing after another pass.
-  if filter ~= "side" then
-    love.graphics.setColor(0.025, 0.05, 0.09)
-    love.graphics.rectangle("fill", 0, 0, width, height)
-  end
+  -- Void stays transparent so the menu cave background shows through.
 
   -- Obstacles and props are layered over terrain. If terrain exists it remains
   -- visible; when the editor stored no underlay, the unused space stays empty.
@@ -2352,15 +2348,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     return true
   end
 
-  local originX = (minCol - 1) * size
-  local originY = (minRow - 1) * size
-  local spanW = (maxCol - minCol + 1) * size
-  local spanH = (maxRow - minRow + 1) * size
-  -- Full clear only when this is the sole pass (no mixed top-down underlay).
-  if filter ~= "side" then
-    love.graphics.setColor(0.025, 0.05, 0.09)
-    love.graphics.rectangle("fill", originX - size, originY - size, spanW + size * 2, spanH + size * 2)
-  end
+  -- Void stays transparent so the menu cave background shows through.
 
   local function cellFloorTop(col, row)
     return Perspective.floorY(col, row, size, "side")
