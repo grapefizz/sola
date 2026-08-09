@@ -573,7 +573,7 @@ function Player:drawHud(grid)
   if self.won then
     love.graphics.print("Iced tea reached! Level complete.", 18, 38)
   elseif self.dead then
-    love.graphics.print("The ice cube burned up! Press R to restart.", 18, 38)
+    love.graphics.print("The ice cube burned up!", 18, 38)
   elseif self.timeRemaining > 0 then
     local seconds = math.ceil(self.timeRemaining)
     local line = "Time until melted: " .. seconds .. "s"

@@ -570,6 +570,17 @@ local function listLevelNames()
   end
 
   table.sort(names, function(a, b)
+    local na = a:match("^level(%d+)$")
+    local nb = b:match("^level(%d+)$")
+    if na and nb then
+      return tonumber(na) < tonumber(nb)
+    end
+    if na then
+      return true
+    end
+    if nb then
+      return false
+    end
     return a:lower() < b:lower()
   end)
 

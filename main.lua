@@ -26,8 +26,24 @@ local levelSlide = {}
 local levelScroll = 0 -- row offset for card grid
 local levelIntro = 0
 local currentLevelName = nil
-local levelCompleteFlash = 0
+local playOverlay = nil -- nil | "complete" | "dead" | "pause"
+local overlayReason = nil -- nil | "burned" | "melted"
+local overlaySelected = 1
+local overlayHover = 0
+local overlayIntro = 0
+local overlaySlide = {0, 0, 0}
 local progress = { finished = {} }
+local deadMenu = {
+  { id = "retry", label = "Retry" },
+  { id = "main_menu", label = "Main Menu" },
+  { id = "levels", label = "Levels" },
+}
+local pauseMenu = {
+  { id = "resume", label = "Resume" },
+  { id = "retry", label = "Retry" },
+  { id = "main_menu", label = "Main Menu" },
+  { id = "levels", label = "Levels" },
+}
 local levelPreviews = {}
 local PROGRESS_FILE = "progress.txt"
 local CARD_COLS = 3
@@ -169,6 +185,18 @@ local function markLevelFinished(name)
   saveProgress()
 end
 
+-- Level 1 is always open; each later level unlocks after finishing the previous one.
+local function isLevelUnlocked(index)
+  if index < 1 or index > #levelList then
+    return false
+  end
+  if index == 1 then
+    return true
+  end
+  local prev = levelList[index - 1]
+  return prev ~= nil and progress.finished[prev] == true
+end
+
 local function prettyLevelName(name)
   local n = name:match("^level(%d+)$")
   if n then
@@ -280,11 +308,87 @@ end
 
 local function openLevelSelect()
   state = "levels"
+  playOverlay = nil
+  overlayReason = nil
+  overlayIntro = 0
   intro = 0
   levelIntro = 0
   levelScroll = 0
   refreshLevelList()
   love.window.setTitle("Ice Cube — Levels")
+end
+
+local function openMainMenu()
+  state = "menu"
+  playOverlay = nil
+  overlayReason = nil
+  overlayIntro = 0
+  intro = 0
+  love.window.setTitle("Ice Cube")
+end
+
+local function nextLevelInfo()
+  if not currentLevelName then
+    return nil, nil
+  end
+  if #levelList == 0 then
+    refreshLevelList()
+  end
+  for i, name in ipairs(levelList) do
+    if name == currentLevelName then
+      local nextName = levelList[i + 1]
+      if nextName then
+        return nextName, i + 1
+      end
+      return nil, nil
+    end
+  end
+  return nil, nil
+end
+
+local function overlayFailReasonText()
+  if overlayReason == "burned" then
+    return "Burned"
+  elseif overlayReason == "melted" then
+    return "Ran out of time"
+  end
+  return nil
+end
+
+local function overlayItems()
+  if playOverlay == "complete" then
+    local items = {}
+    if nextLevelInfo() then
+      items[#items + 1] = { id = "next_level", label = "Next Level" }
+    end
+    items[#items + 1] = { id = "play_again", label = "Play Again" }
+    items[#items + 1] = { id = "main_menu", label = "Main Menu" }
+    items[#items + 1] = { id = "levels", label = "Levels" }
+    return items
+  elseif playOverlay == "pause" then
+    return pauseMenu
+  end
+  return deadMenu
+end
+
+local function openPlayOverlay(kind, reason)
+  playOverlay = kind
+  overlayReason = reason
+  overlaySelected = 1
+  overlayHover = 0
+  overlayIntro = 0
+  local items = overlayItems()
+  for i = 1, #items do
+    overlaySlide[i] = 0
+  end
+end
+
+local function closePlayOverlay()
+  playOverlay = nil
+  overlayReason = nil
+  overlayIntro = 0
+  overlaySelected = 1
+  overlayHover = 0
 end
 
 local function restartRun()
@@ -307,7 +411,9 @@ local function restartRun()
   camera = Camera.new(cameraX, cameraY, 2)
   cameraFollowX, cameraFollowY = cameraX, cameraY
   grid:addWater(player.col, player.row)
-  levelCompleteFlash = 0
+  playOverlay = nil
+  overlayReason = nil
+  overlayIntro = 0
 end
 
 local function startPlay(openEditor, levelName)
@@ -339,10 +445,25 @@ end
 local function startSelectedLevel()
   local name = levelList[levelSelected]
   if not name then
-    return
+    return false
+  end
+  if not isLevelUnlocked(levelSelected) then
+    return false
   end
   state = "play"
   startPlay(false, name)
+  return true
+end
+
+local function startNextLevel()
+  local name, index = nextLevelInfo()
+  if not name then
+    return false
+  end
+  levelSelected = index
+  state = "play"
+  startPlay(false, name)
+  return true
 end
 
 local function clamp(v, a, b)
@@ -741,6 +862,146 @@ local function easeOutCubic(t)
   return 1 - u * u * u
 end
 
+local function overlayPanelRect(width, height)
+  local items = overlayItems()
+  local pw = 260
+  local rowH = 40
+  local reason = playOverlay == "dead" and overlayFailReasonText()
+  local titleH = reason and 78 or 56
+  local pad = 16
+  local ph = titleH + pad + #items * rowH + 12
+  local px = math.floor((width - pw) * 0.5)
+  local py = math.floor((height - ph) * 0.5)
+  return px, py, pw, ph, rowH, titleH, pad
+end
+
+local function overlayItemHit(mx, my, width, height)
+  if not playOverlay then
+    return 0
+  end
+  local items = overlayItems()
+  local px, py, pw, _, rowH, titleH, pad = overlayPanelRect(width, height)
+  local y0 = py + titleH + pad - 4
+  for i = 1, #items do
+    local y = y0 + (i - 1) * rowH
+    if mx >= px + 12 and mx <= px + pw - 12 and my >= y and my <= y + rowH - 6 then
+      return i
+    end
+  end
+  return 0
+end
+
+local function activateOverlay(item)
+  if not item then
+    return
+  end
+  playSfx(sfxClick)
+  bumpShake(3.5, 0.16)
+  local id = item.id
+  if id == "resume" then
+    closePlayOverlay()
+  elseif id == "next_level" then
+    if not startNextLevel() then
+      openLevelSelect()
+    end
+  elseif id == "play_again" or id == "retry" then
+    restartRun()
+  elseif id == "main_menu" then
+    openMainMenu()
+  elseif id == "levels" then
+    openLevelSelect()
+  end
+end
+
+local function drawPlayOverlay(width, height)
+  if not playOverlay then
+    return
+  end
+
+  local e = easeOutCubic(clamp(overlayIntro / 0.35, 0, 1))
+  local items = overlayItems()
+  local px, py, pw, ph, rowH, titleH, pad = overlayPanelRect(width, height)
+  py = py + math.floor((1 - e) * 10)
+
+  love.graphics.setColor(0.04, 0.10, 0.18, 0.42 * e)
+  love.graphics.rectangle("fill", 0, 0, width, height)
+
+  drawPanel(px, py, pw, ph, e)
+
+  local title = "Game Over"
+  if playOverlay == "complete" then
+    title = "Level Complete!"
+  elseif playOverlay == "pause" then
+    title = "Paused"
+  end
+  local reason = playOverlay == "dead" and overlayFailReasonText() or nil
+  local reasonDetail = nil
+  if overlayReason == "burned" then
+    reasonDetail = "Touched fire"
+  elseif overlayReason == "melted" then
+    reasonDetail = "Melted away"
+  end
+
+  love.graphics.setFont(fonts.menu)
+  local tx = math.floor(px + (pw - fonts.menu:getWidth(title)) * 0.5)
+  love.graphics.setColor(0.06, 0.16, 0.30, e)
+  love.graphics.print(title, tx + 1, py + 14)
+  love.graphics.setColor(0.95, 0.98, 1.0, e)
+  love.graphics.print(title, tx, py + 13)
+
+  local dividerY = py + 46
+  if reason then
+    love.graphics.setFont(fonts.credits)
+    local rx = math.floor(px + (pw - fonts.credits:getWidth(reason)) * 0.5)
+    love.graphics.setColor(0.06, 0.16, 0.30, e * 0.9)
+    love.graphics.print(reason, rx + 1, py + 44)
+    love.graphics.setColor(0.78, 0.92, 1.0, e)
+    love.graphics.print(reason, rx, py + 43)
+    if reasonDetail then
+      love.graphics.setFont(fonts.small)
+      local dx = math.floor(px + (pw - fonts.small:getWidth(reasonDetail)) * 0.5)
+      love.graphics.setColor(0.70, 0.84, 0.95, 0.85 * e)
+      love.graphics.print(reasonDetail, dx, py + 64)
+    end
+    dividerY = py + titleH - 10
+  end
+
+  love.graphics.setColor(0.20, 0.38, 0.55, 0.5 * e)
+  love.graphics.rectangle("fill", px + 24, dividerY, pw - 48, 2)
+
+  local y0 = py + titleH + pad - 4
+  for i, item in ipairs(items) do
+    local y = y0 + (i - 1) * rowH
+    local slide = overlaySlide[i] or 0
+    local active = slide > 0.15
+    local pulse = active and (0.85 + 0.15 * math.sin(elapsed * 5)) or 1
+    local inset = math.floor(10 - 4 * slide)
+    local rowX = px + inset
+    local rowW = pw - inset * 2
+    local rowHDraw = rowH - 8
+
+    if active then
+      drawRowHighlight(rowX, y, rowW, rowHDraw, e * pulse)
+      local cx = rowX + 14
+      local cy = y + math.floor(rowHDraw * 0.5)
+      love.graphics.setColor(0.45, 0.78, 1.0, 0.45 * e)
+      love.graphics.polygon("fill", cx - 2, cy - 8, cx + 11, cy, cx - 2, cy + 8)
+      love.graphics.setColor(1, 1, 1, e)
+      love.graphics.polygon("fill", cx, cy - 6, cx + 9, cy, cx, cy + 6)
+    end
+
+    love.graphics.setFont(fonts.credits)
+    local labelA = (0.7 + 0.3 * slide) * e
+    local th = fonts.credits:getHeight()
+    local lx = px + 36
+    local ly = y + math.floor((rowHDraw - th) * 0.5)
+    love.graphics.setColor(0.06, 0.16, 0.30, labelA)
+    love.graphics.print(item.label, lx + 1, ly + 1)
+    love.graphics.setColor(0.95, 0.98, 1.0, labelA)
+    love.graphics.print(item.label, lx, ly)
+  end
+end
+
 local function levelsGridMetrics(width, height)
   local gridW = CARD_COLS * CARD_W + (CARD_COLS - 1) * CARD_GAP_X
   local gridH = CARD_ROWS * CARD_H + (CARD_ROWS - 1) * CARD_GAP_Y
@@ -836,16 +1097,24 @@ local function levelItemHit(mx, my, width, height)
   return 0
 end
 
-local function drawStatusBadge(x, y, finished, alpha)
-  local label = finished and "Finished" or "New"
+local function drawStatusBadge(x, y, finished, alpha, locked)
+  local label = locked and "Locked" or (finished and "Finished" or "New")
   love.graphics.setFont(fonts.small)
   local tw = fonts.small:getWidth(label)
   local th = fonts.small:getHeight()
-  local pad = finished and 22 or 14
+  local pad = locked and 22 or (finished and 22 or 14)
   local bw, bh = tw + pad, th + 6
   local bx = math.floor(x - bw * 0.5)
 
-  if finished then
+  if locked then
+    love.graphics.setColor(0.16, 0.22, 0.32, 0.88 * alpha)
+    love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
+    love.graphics.setColor(0.55, 0.68, 0.82, 0.75 * alpha)
+    love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
+    drawLockIcon(bx + 4, y + math.floor((bh - 18) * 0.5), alpha * 0.95)
+    love.graphics.setColor(0.82, 0.90, 0.98, 0.9 * alpha)
+    love.graphics.print(label, bx + 18, y + 2)
+  elseif finished then
     love.graphics.setColor(0.18, 0.42, 0.28, 0.9 * alpha)
     love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
     love.graphics.setColor(0.45, 0.92, 0.62, 0.95 * alpha)
@@ -876,6 +1145,146 @@ local function keepLevelSelectionVisible()
   levelScroll = math.max(0, math.min(maxLevelScroll(), levelScroll))
 end
 
+local function updateShake(dt)
+  if shakeTime <= 0 then
+    return
+  end
+  shakeTime = math.max(0, shakeTime - dt)
+  local t = shakeTime > 0 and (shakeMag * (shakeTime / 0.25)) or 0
+  shakeX = (love.math.random() * 2 - 1) * t
+  shakeY = (love.math.random() * 2 - 1) * t
+  if shakeTime <= 0 then
+    shakeX, shakeY, shakeMag = 0, 0, 0
+  end
+end
+
+local function updateSnowFlakes(dt, width, height)
+  if not getSetting("snow") then
+    return
+  end
+  for _, f in ipairs(snow) do
+    f.y = f.y + f.speed * dt
+    f.x = f.x + math.sin(elapsed * 0.7 + f.phase) * f.drift * dt
+    f.rot = f.rot + f.spin * dt
+    if f.y > height + 20 then
+      f.y = -20
+      f.x = love.math.random() * width
+    end
+  end
+end
+
+local function updateLevelsScreen(dt, width, height)
+  levelIntro = math.min(1, levelIntro + dt * 1.5)
+  local hit = levelItemHit(mouseX, mouseY, width, height)
+  if hit > 0 then
+    levelSelected = hit
+    levelHover = hit
+  else
+    levelHover = 0
+  end
+  for i = 1, #levelList do
+    local target = ((i == levelSelected) or (i == levelHover)) and 1 or 0
+    levelSlide[i] = lerp(levelSlide[i] or 0, target, 1 - math.exp(-16 * dt))
+  end
+  keepLevelSelectionVisible()
+end
+
+local function updateMenuScreen(dt, width, height)
+  swayPhase = swayPhase + dt * swaySpeed
+  cubeAngle = angleBase + math.sin(swayPhase) * angleSwing
+  iceModel:setRotation(0.12, 0, cubeAngle)
+  bobAmount = math.sin(elapsed * 0.95) * 3.2
+
+  if blushTimer > 0 then
+    blushTimer = blushTimer - dt
+    if blushTimer > 1.0 then
+      blush = 1
+    else
+      blush = clamp(blushTimer / 1.0, 0, 1)
+    end
+    if blushTimer <= 0 then
+      blush = 0
+    end
+  elseif pressingCube then
+    blush = math.min(1, blush + dt * 0.8)
+  elseif blush > 0 then
+    blush = math.max(0, blush - dt * 0.45)
+  end
+
+  local wantBlush = blush > 0.2
+  if wantBlush ~= usingBlushTex then
+    usingBlushTex = wantBlush
+    iceModel.mesh:setTexture(wantBlush and iceTexBlush or iceTex)
+    iceModel.texture = wantBlush and iceTexBlush or iceTex
+  end
+
+  local hit = menuItemHit(mouseX, mouseY, width, height)
+  if hit > 0 then
+    selected = hit
+    hover = hit
+  else
+    hover = 0
+  end
+
+  for i = 1, #menu do
+    local target = ((i == selected) or (i == hover)) and 1 or 0
+    menuSlide[i] = lerp(menuSlide[i], target, 1 - math.exp(-16 * dt))
+  end
+end
+
+local function updatePlayScreen(dt, width, height)
+  if editor.active then
+    editor:update(dt, grid, camera)
+    return
+  end
+
+  if playOverlay ~= "pause" then
+    player:update(dt, grid)
+    local cameraX, cameraY = grid:tileCenter(player.col, player.row)
+    local followT = 1 - math.exp(-cameraFollowSpeed * dt)
+    cameraFollowX = cameraFollowX + (cameraX - cameraFollowX) * followT
+    cameraFollowY = cameraFollowY + (cameraY - cameraFollowY) * followT
+    camera.x = cameraFollowX
+    camera.y = cameraFollowY
+  end
+
+  if not playOverlay then
+    -- Reaching the iced-tea goal is the only completion condition.
+    if player.won then
+      if currentLevelName and not progress.finished[currentLevelName] then
+        markLevelFinished(currentLevelName)
+      end
+      openPlayOverlay("complete")
+      playSfx(sfxToggle)
+      bumpShake(4, 0.2)
+    elseif player.dead then
+      openPlayOverlay("dead", "burned")
+      playSfx(sfxClick)
+      bumpShake(3, 0.18)
+    elseif player:isMelted() then
+      openPlayOverlay("dead", "melted")
+      playSfx(sfxClick)
+      bumpShake(3, 0.18)
+    end
+  end
+
+  if playOverlay then
+    overlayIntro = math.min(1, overlayIntro + dt)
+    local items = overlayItems()
+    local hit = overlayItemHit(mouseX, mouseY, width, height)
+    if hit > 0 then
+      overlaySelected = hit
+      overlayHover = hit
+    else
+      overlayHover = 0
+    end
+    for i = 1, #items do
+      local target = ((i == overlaySelected) or (i == overlayHover)) and 1 or 0
+      overlaySlide[i] = lerp(overlaySlide[i] or 0, target, 1 - math.exp(-16 * dt))
+    end
+  end
+end
+
 function love.update(dt)
   elapsed = elapsed + dt
   local width, height = love.graphics.getDimensions()
@@ -884,114 +1293,19 @@ function love.update(dt)
   glowPulse = 0.55 + 0.45 * math.sin(elapsed * 1.2)
   titlePulse = 0.85 + 0.15 * math.sin(elapsed * 1.6)
 
-  if shakeTime > 0 then
-    shakeTime = math.max(0, shakeTime - dt)
-    local t = shakeTime > 0 and (shakeMag * (shakeTime / 0.25)) or 0
-    shakeX = (love.math.random() * 2 - 1) * t
-    shakeY = (love.math.random() * 2 - 1) * t
-    if shakeTime <= 0 then
-      shakeX, shakeY, shakeMag = 0, 0, 0
-    end
-  end
-
-  if getSetting("snow") then
-    for _, f in ipairs(snow) do
-      f.y = f.y + f.speed * dt
-      f.x = f.x + math.sin(elapsed * 0.7 + f.phase) * f.drift * dt
-      f.rot = f.rot + f.spin * dt
-      if f.y > height + 20 then
-        f.y = -20
-        f.x = love.math.random() * width
-      end
-    end
-  end
+  updateShake(dt)
+  updateSnowFlakes(dt, width, height)
 
   if state == "menu" or state == "credits" or state == "settings" or state == "levels" then
     intro = math.min(1, intro + dt * 1.35)
   end
 
   if state == "levels" then
-    levelIntro = math.min(1, levelIntro + dt * 1.5)
-    local hit = levelItemHit(mouseX, mouseY, width, height)
-    if hit > 0 then
-      levelSelected = hit
-      levelHover = hit
-    else
-      levelHover = 0
-    end
-    for i = 1, #levelList do
-      local target = ((i == levelSelected) or (i == levelHover)) and 1 or 0
-      levelSlide[i] = lerp(levelSlide[i] or 0, target, 1 - math.exp(-16 * dt))
-    end
-    keepLevelSelectionVisible()
-  end
-
-  if state == "menu" then
-    swayPhase = swayPhase + dt * swaySpeed
-    cubeAngle = angleBase + math.sin(swayPhase) * angleSwing
-    iceModel:setRotation(0.12, 0, cubeAngle)
-    bobAmount = math.sin(elapsed * 0.95) * 3.2
-
-    if blushTimer > 0 then
-      blushTimer = blushTimer - dt
-      if blushTimer > 1.0 then
-        blush = 1
-      else
-        blush = clamp(blushTimer / 1.0, 0, 1)
-      end
-      if blushTimer <= 0 then
-        blush = 0
-      end
-    elseif pressingCube then
-      blush = math.min(1, blush + dt * 0.8)
-    elseif blush > 0 then
-      blush = math.max(0, blush - dt * 0.45)
-    end
-
-    local wantBlush = blush > 0.2
-    if wantBlush ~= usingBlushTex then
-      usingBlushTex = wantBlush
-      iceModel.mesh:setTexture(wantBlush and iceTexBlush or iceTex)
-      iceModel.texture = wantBlush and iceTexBlush or iceTex
-    end
-
-    local hit = menuItemHit(mouseX, mouseY, width, height)
-    if hit > 0 then
-      selected = hit
-      hover = hit
-    else
-      hover = 0
-    end
-
-    for i = 1, #menu do
-      local target = ((i == selected) or (i == hover)) and 1 or 0
-      menuSlide[i] = lerp(menuSlide[i], target, 1 - math.exp(-16 * dt))
-    end
+    updateLevelsScreen(dt, width, height)
+  elseif state == "menu" then
+    updateMenuScreen(dt, width, height)
   elseif state == "play" then
-    if editor.active then
-      editor:update(dt, grid, camera)
-    else
-      player:update(dt, grid)
-      local cameraX, cameraY = grid:tileCenter(player.col, player.row)
-      local followT = 1 - math.exp(-cameraFollowSpeed * dt)
-      cameraFollowX = cameraFollowX + (cameraX - cameraFollowX) * followT
-      cameraFollowY = cameraFollowY + (cameraY - cameraFollowY) * followT
-      camera.x = cameraFollowX
-      camera.y = cameraFollowY
-      -- Reaching the iced-tea goal is the only completion condition.
-      if currentLevelName
-        and player.won
-        and not progress.finished[currentLevelName]
-      then
-        markLevelFinished(currentLevelName)
-        levelCompleteFlash = 2.2
-        playSfx(sfxToggle)
-        bumpShake(4, 0.2)
-      end
-      if levelCompleteFlash > 0 then
-        levelCompleteFlash = math.max(0, levelCompleteFlash - dt)
-      end
-    end
+    updatePlayScreen(dt, width, height)
   end
 end
 
@@ -1241,6 +1555,7 @@ local function drawLevels(width, height)
       local active = slide > 0.15
       local pulse = active and (0.88 + 0.12 * math.sin(elapsed * 5)) or 1
       local finished = progress.finished[name] == true
+      local locked = not isLevelUnlocked(i)
       local lift = math.floor(slide * 6)
       local cardY = y - lift
       local a = e
@@ -1254,13 +1569,20 @@ local function drawLevels(width, height)
       drawPanel(x, cardY, w, h, a)
 
       if active then
-        love.graphics.setColor(0.85, 0.96, 1.0, 0.7 * a * pulse)
-        love.graphics.setLineWidth(3)
-        love.graphics.rectangle("line", x + 2, cardY + 2, w - 4, h - 4)
-        love.graphics.setLineWidth(1)
-        -- soft glow under selected card
-        love.graphics.setColor(0.45, 0.80, 1.0, 0.12 * a * pulse)
-        love.graphics.ellipse("fill", x + w * 0.5, cardY + h + 6, w * 0.42, 10)
+        if locked then
+          love.graphics.setColor(0.55, 0.68, 0.82, 0.55 * a * pulse)
+          love.graphics.setLineWidth(2)
+          love.graphics.rectangle("line", x + 2, cardY + 2, w - 4, h - 4)
+          love.graphics.setLineWidth(1)
+        else
+          love.graphics.setColor(0.85, 0.96, 1.0, 0.7 * a * pulse)
+          love.graphics.setLineWidth(3)
+          love.graphics.rectangle("line", x + 2, cardY + 2, w - 4, h - 4)
+          love.graphics.setLineWidth(1)
+          -- soft glow under selected card
+          love.graphics.setColor(0.45, 0.80, 1.0, 0.12 * a * pulse)
+          love.graphics.ellipse("fill", x + w * 0.5, cardY + h + 6, w * 0.42, 10)
+        end
       end
 
       -- preview fills the card (card is sized to fit it)
@@ -1272,12 +1594,23 @@ local function drawLevels(width, height)
 
       love.graphics.setColor(0.05, 0.12, 0.20, a)
       love.graphics.rectangle("fill", prevX - 2, prevY - 2, prevW + 4, prevH + 4)
-      love.graphics.setColor(0.55, 0.78, 0.95, 0.65 * a)
+      love.graphics.setColor(0.55, 0.78, 0.95, (locked and 0.35 or 0.65) * a)
       love.graphics.rectangle("line", prevX - 2, prevY - 2, prevW + 4, prevH + 4)
 
       if preview then
-        love.graphics.setColor(1, 1, 1, a)
+        love.graphics.setColor(1, 1, 1, (locked and 0.35 or 1) * a)
         love.graphics.draw(preview, prevX, prevY, 0, prevW / preview:getWidth(), prevH / preview:getHeight())
+      end
+
+      if locked then
+        love.graphics.setColor(0.04, 0.10, 0.18, 0.45 * a)
+        love.graphics.rectangle("fill", prevX, prevY, prevW, prevH)
+        local lockSize = 18
+        drawLockIcon(
+          math.floor(prevX + (prevW - 14) * 0.5),
+          math.floor(prevY + (prevH - lockSize) * 0.5),
+          a * (0.75 + 0.25 * math.sin(elapsed * 4))
+        )
       end
 
       -- name + badge in the strip under the preview
@@ -1288,10 +1621,14 @@ local function drawLevels(width, height)
       local ly = prevY + prevH + 8
       love.graphics.setColor(0.06, 0.16, 0.30, a)
       love.graphics.print(label, lx + 1, ly + 1)
-      love.graphics.setColor(0.95, 0.98, 1.0, a)
+      if locked then
+        love.graphics.setColor(0.70, 0.80, 0.90, 0.75 * a)
+      else
+        love.graphics.setColor(0.95, 0.98, 1.0, a)
+      end
       love.graphics.print(label, lx, ly)
 
-      drawStatusBadge(x + w * 0.5, ly + labelFont:getHeight() + 4, finished, a)
+      drawStatusBadge(x + w * 0.5, ly + labelFont:getHeight() + 4, finished, a, locked)
     end
 
     -- scrollbar on the right edge of the screen (not inside a menu box)
@@ -1506,22 +1843,7 @@ function love.draw()
     else
       player:draw(grid, camera)
       player:drawHud(grid)
-      if levelCompleteFlash > 0 then
-        local a = math.min(1, levelCompleteFlash)
-        love.graphics.setColor(0.04, 0.10, 0.18, 0.45 * a)
-        love.graphics.rectangle("fill", 0, 0, width, height)
-        love.graphics.setFont(fonts.title)
-        local msg = "Level finished!"
-        local tw = fonts.title:getWidth(msg)
-        love.graphics.setColor(0.06, 0.16, 0.30, a)
-        love.graphics.print(msg, math.floor((width - tw) * 0.5) + 1, math.floor(height * 0.42) + 1)
-        love.graphics.setColor(0.85, 1.0, 0.92, a)
-        love.graphics.print(msg, math.floor((width - tw) * 0.5), math.floor(height * 0.42))
-        love.graphics.setFont(fonts.small)
-        local tip = "Esc · back to levels"
-        love.graphics.setColor(0.75, 0.90, 1.0, 0.85 * a)
-        love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), math.floor(height * 0.42) + 42)
-      end
+      drawPlayOverlay(width, height)
     end
     return
   end
@@ -1596,8 +1918,11 @@ function love.keypressed(key)
         playSfx(sfxClick)
       elseif key == "return" or key == "space" then
         playSfx(sfxClick)
-        bumpShake(3.5, 0.16)
-        startSelectedLevel()
+        if startSelectedLevel() then
+          bumpShake(3.5, 0.16)
+        else
+          bumpShake(2.5, 0.12)
+        end
       end
     end
   elseif state == "credits" then
@@ -1645,13 +1970,39 @@ function love.keypressed(key)
       return
     end
 
+    if playOverlay and not editor.active then
+      local items = overlayItems()
+      if key == "up" or key == "w" then
+        overlaySelected = overlaySelected - 1
+        if overlaySelected < 1 then overlaySelected = #items end
+        playSfx(sfxClick)
+      elseif key == "down" or key == "s" then
+        overlaySelected = overlaySelected + 1
+        if overlaySelected > #items then overlaySelected = 1 end
+        playSfx(sfxClick)
+      elseif key == "return" or key == "space" then
+        activateOverlay(items[overlaySelected])
+      elseif key == "escape" then
+        if playOverlay == "pause" then
+          closePlayOverlay()
+          playSfx(sfxClick)
+        else
+          openLevelSelect()
+          playSfx(sfxClick)
+        end
+      elseif key == "r" and playOverlay ~= "pause" then
+        restartRun()
+      end
+      return
+    end
+
     if key == "escape" then
       if editor.active then
         state = "menu"
         intro = 0
         love.window.setTitle("Ice Cube")
       else
-        openLevelSelect()
+        openPlayOverlay("pause")
       end
       playSfx(sfxClick)
       return
@@ -1706,6 +2057,15 @@ end
 
 function love.mousepressed(x, y, button)
   if state == "play" then
+    if playOverlay and not editor.active and button == 1 then
+      local width, height = love.graphics.getDimensions()
+      local hit = overlayItemHit(x, y, width, height)
+      if hit > 0 then
+        overlaySelected = hit
+        activateOverlay(overlayItems()[hit])
+      end
+      return
+    end
     if editor.active then
       editor:mousepressed(x, y, button, grid, camera)
     end
@@ -1738,8 +2098,11 @@ function love.mousepressed(x, y, button)
     if hit > 0 then
       levelSelected = hit
       playSfx(sfxClick)
-      bumpShake(3.5, 0.16)
-      startSelectedLevel()
+      if startSelectedLevel() then
+        bumpShake(3.5, 0.16)
+      else
+        bumpShake(2.5, 0.12)
+      end
     end
   elseif state == "credits" then
     state = "menu"
