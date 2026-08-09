@@ -80,30 +80,17 @@ local function getPreviewSprites()
     fire = love.graphics.newImage("assets/fire.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
-<<<<<<< HEAD
     keyPieceTop = love.graphics.newImage("assets/key-piece-top.png"),
     keyPieceBottom = love.graphics.newImage("assets/key-piece-bottom.png"),
     keyPieceTopSide = love.graphics.newImage("assets/key-piece-top-side.png"),
     keyPieceBottomSide = love.graphics.newImage("assets/key-piece-bottom-side.png"),
-  }
-  for _, image in pairs(previewSprites) do
-    image:setFilter("linear", "linear")
-  end
-=======
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
   }
-  previewSprites.ground:setFilter("linear", "linear")
-  previewSprites.ice:setFilter("linear", "linear")
-  previewSprites.snowflake:setFilter("linear", "linear")
-  previewSprites.fire:setFilter("linear", "linear")
-  previewSprites.keyTop:setFilter("linear", "linear")
-  previewSprites.keyDown:setFilter("linear", "linear")
-  previewSprites.boulder:setFilter("linear", "linear")
-  previewSprites.boulder2:setFilter("linear", "linear")
-  previewSprites.crackedBoulder:setFilter("linear", "linear")
->>>>>>> 07502f369897f7a8dc6e5cc642342c0521d4a488
+  for _, image in pairs(previewSprites) do
+    image:setFilter("linear", "linear")
+  end
   return previewSprites
 end
 

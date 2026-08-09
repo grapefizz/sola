@@ -1000,8 +1000,6 @@ local function levelsGridMetrics(width, height)
   return gridX, gridY, gridW, gridH
 end
 
-<<<<<<< HEAD
-=======
 local function perspectiveButtonRect(width, height)
   local bw, bh = 148, 34
   local x = width - bw - 18
@@ -1058,7 +1056,6 @@ local function drawPerspectiveButton(width, height, alpha)
   setUiColor("text", alpha)
   love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
 end
->>>>>>> 07502f369897f7a8dc6e5cc642342c0521d4a488
 local function levelCardRect(index, width, height)
   local localIndex = index - levelScroll * CARD_COLS
   if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
@@ -1576,13 +1573,8 @@ local function drawLevels(width, height)
   end
 
   love.graphics.setFont(fonts.small)
-<<<<<<< HEAD
-  love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
-  local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
-=======
   setUiColor("textMuted", 0.9 * e)
   local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
->>>>>>> 07502f369897f7a8dc6e5cc642342c0521d4a488
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
   drawPerspectiveButton(width, height, e)

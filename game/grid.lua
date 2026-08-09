@@ -26,16 +26,13 @@ local function getTileSprites()
     fire = love.graphics.newImage("assets/fire-sheet.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
-<<<<<<< HEAD
     keyPieceTop = love.graphics.newImage("assets/key-piece-top.png"),
     keyPieceBottom = love.graphics.newImage("assets/key-piece-bottom.png"),
     keyPieceTopSide = love.graphics.newImage("assets/key-piece-top-side.png"),
     keyPieceBottomSide = love.graphics.newImage("assets/key-piece-bottom-side.png"),
-=======
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
->>>>>>> 07502f369897f7a8dc6e5cc642342c0521d4a488
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -45,16 +42,13 @@ local function getTileSprites()
   tileSprites.fire:setFilter("linear", "linear")
   tileSprites.keyTop:setFilter("linear", "linear")
   tileSprites.keyDown:setFilter("linear", "linear")
-<<<<<<< HEAD
   tileSprites.keyPieceTop:setFilter("linear", "linear")
   tileSprites.keyPieceBottom:setFilter("linear", "linear")
   tileSprites.keyPieceTopSide:setFilter("linear", "linear")
   tileSprites.keyPieceBottomSide:setFilter("linear", "linear")
-=======
   tileSprites.boulder:setFilter("linear", "linear")
   tileSprites.boulder2:setFilter("linear", "linear")
   tileSprites.crackedBoulder:setFilter("linear", "linear")
->>>>>>> 07502f369897f7a8dc6e5cc642342c0521d4a488
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -1043,18 +1037,15 @@ function Grid:serialize()
         cells[col] = (self:getKeyVariant(col, row) == "down") and "M" or "J"
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
-<<<<<<< HEAD
-        cells[col] = boulder.cracked and "Q" or "O"
-      elseif self:isBoulderTile(col, row) and self:isMossTile(col, row) then
-        local boulder = self.boulderTiles[self:key(col, row)]
-        cells[col] = boulder.cracked and "p" or "b"
-=======
         if boulder.cracked then
           cells[col] = "Q"
         else
-          cells[col] = boulder.variant == 2 and "m" or "O"
+          -- s = boulder2 on ice (M/m reserved for key halves; a-i for half walls)
+          cells[col] = boulder.variant == 2 and "t" or "O"
         end
->>>>>>> 07502f369897f7a8dc6e5cc642342c0521d4a488
+      elseif self:isBoulderTile(col, row) and self:isMossTile(col, row) then
+        local boulder = self.boulderTiles[self:key(col, row)]
+        cells[col] = boulder.cracked and "p" or (boulder.variant == 2 and "u" or "n")
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isMossTile(col, row) then
@@ -1066,7 +1057,7 @@ function Grid:serialize()
         if boulder.cracked then
           cells[col] = "P"
         else
-          cells[col] = boulder.variant == 2 and "M" or "B"
+          cells[col] = boulder.variant == 2 and "s" or "B"
         end
       elseif self:isWallTile(col, row) then
         local wall = self.wallTiles[self:key(col, row)]
@@ -1149,16 +1140,19 @@ function Grid:load(serialized)
         self:addIce(col, row)
       elseif cell == "o" then
         self:addMoss(col, row)
-      elseif cell == "b" then
+      elseif cell == "n" then
         self:addMoss(col, row)
         self:addBoulder(col, row)
+      elseif cell == "u" then
+        self:addMoss(col, row)
+        self:addBoulder(col, row, { variant = 2 })
       elseif cell == "p" then
         self:addMoss(col, row)
         self:addBoulder(col, row, { cracked = true })
       elseif cell == "O" then
         self:addIce(col, row)
         self:addBoulder(col, row)
-      elseif cell == "m" then
+      elseif cell == "t" then
         self:addIce(col, row)
         self:addBoulder(col, row, { variant = 2 })
       elseif cell == "Q" then
@@ -1192,7 +1186,7 @@ function Grid:load(serialized)
         self:addPuzzlePiece(col, row, "down")
       elseif cell == "B" then
         self:addBoulder(col, row)
-      elseif cell == "M" then
+      elseif cell == "s" then
         self:addBoulder(col, row, { variant = 2 })
       elseif cell == "P" then
         self:addBoulder(col, row, { cracked = true })
