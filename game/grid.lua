@@ -1714,21 +1714,9 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     love.graphics.rectangle("fill", 0, 0, width, height)
   end
 
-  -- Side walls + half walls are wall-only: never paint brick under them.
+  -- Walls sit on ground. Thin side walls leave the open part of the tile
+  -- visible, and half walls leave the uncovered part visible above them.
   local function hidesGround(col, row)
-    local wall = self.wallTiles[self:key(col, row)]
-    if not wall then
-      return false
-    end
-    if wall.texture == "side" then
-      return true
-    end
-    if wall.half then
-      return true
-    end
-    if wall.under and wall.under.half then
-      return true
-    end
     return false
   end
 
@@ -1862,7 +1850,7 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     end
   end
 
-  -- Behind walls: full behind walls get an inset ground pad; half / side stay wall-only.
+  -- Behind full walls get an inset ground pad; all walls retain their ground tile.
   local behindPad = math.max(8, math.floor(self.size * 0.18))
   for col = minCol, maxCol do
     for row = minRow, maxRow do
