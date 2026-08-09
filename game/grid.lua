@@ -7,7 +7,10 @@ local TEXTURE_GRID_SIZE = 1
 local FIRE_FRAME_SIZE = 128
 local FIRE_FRAME_COUNT = 9
 local FIRE_FRAME_DURATION = 1 / 12
+local DEFAULT_SNOWFLAKE_SECONDS = 3
 local tileSprites
+
+Grid.DEFAULT_SNOWFLAKE_SECONDS = DEFAULT_SNOWFLAKE_SECONDS
 local groundQuadCache = {}
 local iceQuadCache = {}
 local mossQuadCache = {}
@@ -517,13 +520,15 @@ function Grid:isInFireZone(col, row)
   return false
 end
 
-function Grid:addSnowflake(col, row)
+function Grid:addSnowflake(col, row, seconds)
   if not self:isInside(col, row) then
     return
   end
   if self:isInFireZone(col, row) then
     return
   end
+  seconds = tonumber(seconds) or DEFAULT_SNOWFLAKE_SECONDS
+  seconds = math.max(1, math.min(99, math.floor(seconds)))
   self:setGround(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
@@ -539,7 +544,7 @@ function Grid:addSnowflake(col, row)
     self.wallTiles[key] = nil
   end
   self.boulderTiles[key] = nil
-  self.snowflakeTiles[key] = { col = col, row = row }
+  self.snowflakeTiles[key] = { col = col, row = row, seconds = seconds }
 end
 
 function Grid:removeSnowflake(col, row)
@@ -561,6 +566,14 @@ end
 
 function Grid:isSnowflakeTile(col, row)
   return self.snowflakeTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:getSnowflakeSeconds(col, row)
+  local flake = self.snowflakeTiles[self:key(col, row)]
+  if not flake then
+    return 0
+  end
+  return flake.seconds or DEFAULT_SNOWFLAKE_SECONDS
 end
 
 function Grid:addTea(col, row)
@@ -1141,7 +1154,7 @@ end
 -- Seconds removed from the melt timer when entering this tile (negative = restore time).
 function Grid:getTimeDelta(col, row)
   if self:isSnowflakeTile(col, row) then
-    return -2
+    return -self:getSnowflakeSeconds(col, row)
   end
   if self:isInFireZone(col, row) then
     return 2
@@ -1301,6 +1314,23 @@ function Grid:serialize()
     output = output .. "\n@half2\n" .. table.concat(halfTwos, "\n")
   end
 
+  -- Snowflake restore times that differ from the default (+3s).
+  local snowflakeTimes = {}
+  for _, flake in pairs(self.snowflakeTiles) do
+    local seconds = flake.seconds or DEFAULT_SNOWFLAKE_SECONDS
+    if seconds ~= DEFAULT_SNOWFLAKE_SECONDS then
+      snowflakeTimes[#snowflakeTimes + 1] = table.concat({
+        flake.col,
+        flake.row,
+        seconds,
+      }, ",")
+    end
+  end
+  table.sort(snowflakeTimes)
+  if #snowflakeTimes > 0 then
+    output = output .. "\n@snowflakes\n" .. table.concat(snowflakeTimes, "\n")
+  end
+
   local emptyUnderlays = {}
   local function recordEmpty(tiles)
     for _, tile in pairs(tiles) do
@@ -1338,6 +1368,12 @@ function Grid:load(serialized)
   local withoutEmpty, emptyUnderlaysPart = serialized:match("^(.-)\r?\n@emptyunderlays\r?\n(.*)$")
   if withoutEmpty then
     serialized = withoutEmpty
+  end
+  local snowflakesPart
+  local withoutSnowflakes, snowflakesBody = serialized:match("^(.-)\r?\n@snowflakes\r?\n(.*)$")
+  if withoutSnowflakes then
+    serialized = withoutSnowflakes
+    snowflakesPart = snowflakesBody
   end
   local half2Part
   local withoutHalf2, half2Body = serialized:match("^(.-)\r?\n@half2\r?\n(.*)$")
@@ -1548,6 +1584,19 @@ function Grid:load(serialized)
             wall.under.lean = face
             wall.under.align = nil
           end
+        end
+      end
+    end
+  end
+
+  if snowflakesPart then
+    for line in snowflakesPart:gmatch("[^\r\n]+") do
+      local col, row, seconds = line:match("^(%d+),(%d+),(%d+)$")
+      col, row, seconds = tonumber(col), tonumber(row), tonumber(seconds)
+      if col and row and seconds and self:isInside(col, row) then
+        local flake = self.snowflakeTiles[self:key(col, row)]
+        if flake then
+          flake.seconds = math.max(1, math.min(99, math.floor(seconds)))
         end
       end
     end

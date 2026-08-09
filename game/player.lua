@@ -404,7 +404,9 @@ end
 -- Solid obstacles you cannot vault over with a jump.
 -- Low half / behind walls can still be jumped *over*, but never landed on.
 function Player:isJumpBlocked(grid, col, row)
-  if grid:isBoulderTile(col, row) then
+  if grid:isBoulderTile(col, row)
+    or grid:isPuzzleDoor(col, row)
+    or (grid:isPressureDoor(col, row) and not grid:isPressureDoorOpen()) then
     return true
   end
   if not grid:isWallTile(col, row) then
