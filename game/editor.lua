@@ -91,6 +91,7 @@ local function getPreviewSprites()
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
     wall = love.graphics.newImage("assets/wall.png"),
+    brickEnd = love.graphics.newImage("assets/Brickend.png"),
   }
   for _, image in pairs(previewSprites) do
     image:setFilter("linear", "linear")
@@ -127,9 +128,15 @@ local function drawWallPreview(image, x, y, width, height, tileSize, alpha, alig
 end
 
 local function drawSideWallPreview(image, x, y, width, height, tileSize, alpha, lean)
-  local peek = tileSize * 0.06
-  local drawX = lean == "right" and (x - peek) or x
-  drawWallPreview(image, drawX, y, width + peek, height, tileSize, alpha, lean)
+  local imageWidth, imageHeight = image:getDimensions()
+  local scaleX = width / imageWidth
+  local scaleY = height / imageHeight
+  love.graphics.setColor(1, 1, 1, alpha)
+  if lean == "left" then
+    love.graphics.draw(image, x + width, y, 0, -scaleX, scaleY)
+  else
+    love.graphics.draw(image, x, y, 0, scaleX, scaleY)
+  end
 end
 
 local function getKeyPiecePreview(sprites, section, sideView)
@@ -266,9 +273,7 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     love.graphics.line(cx, y + 6, cx, y + size - 6)
     love.graphics.line(x + 6, cy, x + size - 6, cy)
   elseif tool == "side_wall" then
-    local stripW = size * 0.5
-    local stripX = wallFacing == "right" and (x + size - stripW) or x
-    drawSideWallPreview(sprites.wall, stripX, y, stripW, size, size, alpha, wallFacing)
+    drawSideWallPreview(sprites.brickEnd, x, y, size, size, size, alpha, wallFacing)
   elseif tool == "front_wall" or tool == "cracked_wall" then
     drawWallPreview(sprites.wall, x, y, size, size, size, alpha)
     if tool == "cracked_wall" then
@@ -335,6 +340,12 @@ local function isFrontWallTool(tool)
 end
 
 local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, wallDepth, keyVariant)
+  local hadGround = grid:hasGround(col, row)
+  local partialTile = tool ~= "ground"
+    and tool ~= "ice"
+    and tool ~= "moss"
+    and tool ~= "erase"
+    and tool ~= "perspective"
   wallDepth = wallDepth or "front"
   if tool == "ground" then
     grid:setGround(col, row)
@@ -389,6 +400,13 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addSideView(col, row)
   elseif tool == "erase" then
     grid:erase(col, row)
+  end
+
+  -- Props and obstacles layer over whatever terrain was already present.
+  -- Their add methods may create ground for legacy/gameplay compatibility;
+  -- remove that implicit ground when the editor tile was originally empty.
+  if partialTile and not hadGround then
+    grid.groundTiles[grid:key(col, row)] = nil
   end
 end
 
@@ -773,6 +791,7 @@ function Editor.new(spawnCol, spawnRow)
     loadDropdownScroll = 0,
     loadOptions = {},
     paintingButton = nil,
+    paintedTiles = {},
     rectangle = nil,
     namingOpen = false,
     namingText = "",
@@ -1057,6 +1076,12 @@ function Editor:paintAt(x, y, button, grid, camera)
     return
   end
 
+  local strokeKey = button .. ":" .. col .. ":" .. row
+  if self.paintedTiles[strokeKey] then
+    return
+  end
+  self.paintedTiles[strokeKey] = true
+
   -- Right-click with Side Zone only clears the zone (keeps tiles).
   if button == 2 and self.tool == "perspective" then
     if not grid:isInside(col, row) then
@@ -1153,6 +1178,7 @@ function Editor:mousepressed(x, y, button, grid, camera)
   end
 
   self.paintingButton = nil
+  self.paintedTiles = {}
 
   if self.namingOpen then
     if button == 1 then
@@ -1287,6 +1313,7 @@ function Editor:mousereleased(x, y, button, grid, camera)
   if self.paintingButton == button then
     self.paintingButton = nil
   end
+  self.paintedTiles = {}
 end
 
 function Editor:textinput(text)
@@ -1591,6 +1618,7 @@ function Editor:update(dt, grid, camera)
     )
   else
     self.paintingButton = nil
+    self.paintedTiles = {}
   end
 end
 

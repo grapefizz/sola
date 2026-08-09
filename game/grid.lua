@@ -35,6 +35,7 @@ local function getTileSprites()
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
     wall = love.graphics.newImage("assets/wall.png"),
+    brickEnd = love.graphics.newImage("assets/Brickend.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -52,6 +53,7 @@ local function getTileSprites()
   tileSprites.boulder2:setFilter("linear", "linear")
   tileSprites.crackedBoulder:setFilter("linear", "linear")
   tileSprites.wall:setFilter("linear", "linear")
+  tileSprites.brickEnd:setFilter("linear", "linear")
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -98,12 +100,15 @@ local function drawWallTexture(image, x, y, width, height, tileSize, alpha, alig
 end
 
 local function drawSideWallTexture(image, x, y, width, height, tileSize, alpha, lean)
-  -- One continuous crop of wall.png, using the exact same scale and bottom
-  -- alignment as a half wall. The extra width reveals a little more of the
-  -- real brick artwork without adding or repeating any shapes.
-  local peek = tileSize * 0.06
-  local drawX = lean == "right" and (x - peek) or x
-  drawWallTexture(image, drawX, y, width + peek, height, tileSize, alpha, lean)
+  local imageWidth, imageHeight = image:getDimensions()
+  local scaleX = width / imageWidth
+  local scaleY = height / imageHeight
+  love.graphics.setColor(1, 1, 1, alpha or 1)
+  if lean == "left" then
+    love.graphics.draw(image, x + width, y, 0, -scaleX, scaleY)
+  else
+    love.graphics.draw(image, x, y, 0, scaleX, scaleY)
+  end
 end
 
 local function getTextureQuad(image, cache, col, row, length)
@@ -272,20 +277,68 @@ end
 
 function Grid:erase(col, row)
   local key = self:key(col, row)
-  self.groundTiles[key] = nil
-  self.waterTiles[key] = nil
-  self.fireTiles[key] = nil
-  self.iceTiles[key] = nil
-  self.mossTiles[key] = nil
-  self.snowflakeTiles[key] = nil
-  self.teaTiles[key] = nil
-  self.puzzlePieceTiles[key] = nil
-  self.puzzleDoorTiles[key] = nil
-  self.pressureDoorTiles[key] = nil
-  self.pressurePlateTiles[key] = nil
-  self.wallTiles[key] = nil
-  self.boulderTiles[key] = nil
-  self.sideViewTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall then
+    -- A joined side wall is the top wall layer; reveal its half/front wall
+    -- underneath and require another erase before touching the terrain.
+    if wall.texture == "side" and wall.under then
+      local under = wall.under
+      self.wallTiles[key] = {
+        col = col,
+        row = row,
+        texture = "front",
+        lean = nil,
+        creased = false,
+        cracked = under.cracked and true or false,
+        half = under.half and true or false,
+        fill = under.fill,
+        depth = under.depth or "behind",
+        under = nil,
+      }
+    else
+      self.wallTiles[key] = nil
+    end
+    return "wall"
+  end
+
+  local objectLayers = {
+    { self.boulderTiles, "boulder" },
+    { self.fireTiles, "fire" },
+    { self.snowflakeTiles, "snowflake" },
+    { self.teaTiles, "tea" },
+    { self.puzzlePieceTiles, "puzzle_piece" },
+    { self.puzzleDoorTiles, "puzzle_door" },
+    { self.pressureDoorTiles, "pressure_door" },
+    { self.pressurePlateTiles, "pressure_plate" },
+  }
+  for _, layer in ipairs(objectLayers) do
+    if layer[1][key] then
+      layer[1][key] = nil
+      return layer[2]
+    end
+  end
+
+  if self.waterTiles[key] then
+    self.waterTiles[key] = nil
+    return "water"
+  end
+  if self.iceTiles[key] then
+    self.iceTiles[key] = nil
+    return "ice"
+  end
+  if self.mossTiles[key] then
+    self.mossTiles[key] = nil
+    return "moss"
+  end
+  if self.groundTiles[key] then
+    self.groundTiles[key] = nil
+    return "ground"
+  end
+  if self.sideViewTiles[key] then
+    self.sideViewTiles[key] = nil
+    return "perspective"
+  end
+  return nil
 end
 
 
@@ -1167,6 +1220,34 @@ function Grid:serialize()
   if #joins > 0 then
     output = output .. "\n@walljoins\n" .. table.concat(joins, "\n")
   end
+
+  local emptyUnderlays = {}
+  local function recordEmpty(tiles)
+    for _, tile in pairs(tiles) do
+      if not self:hasGround(tile.col, tile.row)
+        and not self:isIceTile(tile.col, tile.row)
+        and not self:isMossTile(tile.col, tile.row) then
+        emptyUnderlays[self:key(tile.col, tile.row)] = tile.col .. "," .. tile.row
+      end
+    end
+  end
+  recordEmpty(self.fireTiles)
+  recordEmpty(self.snowflakeTiles)
+  recordEmpty(self.teaTiles)
+  recordEmpty(self.puzzlePieceTiles)
+  recordEmpty(self.puzzleDoorTiles)
+  recordEmpty(self.pressureDoorTiles)
+  recordEmpty(self.pressurePlateTiles)
+  recordEmpty(self.wallTiles)
+  recordEmpty(self.boulderTiles)
+  local emptyLines = {}
+  for _, line in pairs(emptyUnderlays) do
+    emptyLines[#emptyLines + 1] = line
+  end
+  table.sort(emptyLines)
+  if #emptyLines > 0 then
+    output = output .. "\n@emptyunderlays\n" .. table.concat(emptyLines, "\n")
+  end
   return output
 end
 
@@ -1174,6 +1255,10 @@ end
 
 function Grid:load(serialized)
   self:clear()
+  local withoutEmpty, emptyUnderlaysPart = serialized:match("^(.-)\r?\n@emptyunderlays\r?\n(.*)$")
+  if withoutEmpty then
+    serialized = withoutEmpty
+  end
   local basePart, wallJoinsPart = serialized:match("^(.-)\r?\n@walljoins\r?\n(.*)$")
   if basePart then
     serialized = basePart
@@ -1329,6 +1414,17 @@ function Grid:load(serialized)
             fill = math.max(0.1, math.min(0.9, fill)),
           }
         end
+      end
+    end
+  end
+
+
+  if emptyUnderlaysPart then
+    for line in emptyUnderlaysPart:gmatch("[^\r\n]+") do
+      local col, row = line:match("^(%d+),(%d+)$")
+      col, row = tonumber(col), tonumber(row)
+      if col and row and self:isInside(col, row) then
+        self.groundTiles[self:key(col, row)] = nil
       end
     end
   end
@@ -1714,8 +1810,8 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     love.graphics.rectangle("fill", 0, 0, width, height)
   end
 
-  -- Walls sit on ground. Thin side walls leave the open part of the tile
-  -- visible, and half walls leave the uncovered part visible above them.
+  -- Obstacles and props are layered over terrain. If terrain exists it remains
+  -- visible; when the editor stored no underlay, the unused space stays empty.
   local function hidesGround(col, row)
     return false
   end
@@ -1998,10 +2094,10 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
       end
 
       drawSideWallTexture(
-        sprites.wall,
-        stripX,
+        sprites.brickEnd,
+        x,
         y,
-        stripW,
+        self.size,
         self.size,
         self.size,
         0.98,
@@ -2331,9 +2427,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     local drawY = wallY
     local drawH = wallMax
 
-    drawSideWallTexture(sprites.wall, sx, drawY, w, drawH, size, 0.98, lean)
-    love.graphics.setColor(0.12, 0.18, 0.26, 0.4)
-    love.graphics.rectangle("fill", sx + w - 3, drawY, 3, drawH)
+    drawSideWallTexture(sprites.brickEnd, x, drawY, size, drawH, size, 0.98, lean)
     if wall.cracked then
       love.graphics.setColor(0.06, 0.10, 0.14, 0.95)
       love.graphics.setLineWidth(2 / zoom)
