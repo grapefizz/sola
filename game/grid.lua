@@ -7,7 +7,10 @@ local TEXTURE_GRID_SIZE = 1
 local FIRE_FRAME_SIZE = 128
 local FIRE_FRAME_COUNT = 9
 local FIRE_FRAME_DURATION = 1 / 12
+local DEFAULT_SNOWFLAKE_SECONDS = 3
 local tileSprites
+
+Grid.DEFAULT_SNOWFLAKE_SECONDS = DEFAULT_SNOWFLAKE_SECONDS
 local groundQuadCache = {}
 local iceQuadCache = {}
 local mossQuadCache = {}
@@ -461,7 +464,11 @@ function Grid:addIce(col, row)
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
-  self.wallTiles[key] = nil
+  -- Keep transparent side / half wall overlays sitting on this ice.
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   -- Keep boulder, puzzle pieces, and pressure plates so ice can sit under them.
   self.iceTiles[key] = { col = col, row = row }
 end
@@ -487,7 +494,10 @@ function Grid:addMoss(col, row)
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
-  self.wallTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   -- Keep boulder, puzzle pieces, and pressure plates so moss can sit under them.
   self.mossTiles[key] = { col = col, row = row }
 end
@@ -510,13 +520,15 @@ function Grid:isInFireZone(col, row)
   return false
 end
 
-function Grid:addSnowflake(col, row)
+function Grid:addSnowflake(col, row, seconds)
   if not self:isInside(col, row) then
     return
   end
   if self:isInFireZone(col, row) then
     return
   end
+  seconds = tonumber(seconds) or DEFAULT_SNOWFLAKE_SECONDS
+  seconds = math.max(1, math.min(99, math.floor(seconds)))
   self:setGround(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
@@ -527,9 +539,12 @@ function Grid:addSnowflake(col, row)
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.wallTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   self.boulderTiles[key] = nil
-  self.snowflakeTiles[key] = { col = col, row = row }
+  self.snowflakeTiles[key] = { col = col, row = row, seconds = seconds }
 end
 
 function Grid:removeSnowflake(col, row)
@@ -551,6 +566,14 @@ end
 
 function Grid:isSnowflakeTile(col, row)
   return self.snowflakeTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:getSnowflakeSeconds(col, row)
+  local flake = self.snowflakeTiles[self:key(col, row)]
+  if not flake then
+    return 0
+  end
+  return flake.seconds or DEFAULT_SNOWFLAKE_SECONDS
 end
 
 function Grid:addTea(col, row)
@@ -775,15 +798,11 @@ function Grid:addWall(col, row, texture, lean, options)
   local key = self:key(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
-  self.iceTiles[key] = nil
-  self.mossTiles[key] = nil
-  self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.boulderTiles[key] = nil
 
   local fill = nil
   if options.half then
@@ -791,6 +810,15 @@ function Grid:addWall(col, row, texture, lean, options)
     fill = math.max(0.1, math.min(0.9, fill))
     fill = math.floor(fill * 10 + 0.5) / 10
     texture = "front"
+  end
+
+  -- Side / half walls are transparent overlays: keep floor props and boulders.
+  local overlay = texture == "side" or options.half
+  if not overlay then
+    self.iceTiles[key] = nil
+    self.mossTiles[key] = nil
+    self.snowflakeTiles[key] = nil
+    self.boulderTiles[key] = nil
   end
 
   local existing = self.wallTiles[key]
@@ -945,20 +973,9 @@ function Grid:getUnderWall(col, row)
 end
 
 -- sizeRatio is timeRemaining/maxTime (1 = full cube). Bigger fill = taller wall = smaller cube required.
+-- Bottom half-walls used to be crawlable when melted; all wall tiles are solid now.
 function Grid:canPassHalfWall(col, row, sizeRatio)
-  local wall = self.wallTiles[self:key(col, row)]
-  if not wall then
-    return false
-  end
-  -- Side walls always block; half-pass only applies to front half walls on the front layer.
-  if wall.texture == "side" then
-    return false
-  end
-  if not wall.half then
-    return false
-  end
-  local fill = wall.fill or 0.5
-  return sizeRatio <= (1 - fill) + 1e-6
+  return false
 end
 
 function Grid:addBoulder(col, row, options)
@@ -977,7 +994,10 @@ function Grid:addBoulder(col, row, options)
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.wallTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   self.boulderTiles[key] = {
     col = col,
     row = row,
@@ -1009,7 +1029,7 @@ function Grid:isCrackedBoulder(col, row)
   return boulder ~= nil and boulder.cracked == true
 end
 
--- Optional sizeRatio lets half-walls open when the ice cube is small enough.
+-- Optional sizeRatio kept for callers; walls are always solid.
 function Grid:isBlocking(col, row, sizeRatio)
   if self:isBoulderTile(col, row) then
     return true
@@ -1020,13 +1040,11 @@ function Grid:isBlocking(col, row, sizeRatio)
   if self:isPressureDoor(col, row) and not self:isPressureDoorOpen() then
     return true
   end
-  if not self:isWallTile(col, row) then
-    return false
+  -- Side, half, top, behind, front — none are walkable.
+  if self:isWallTile(col, row) then
+    return true
   end
-  if sizeRatio ~= nil and self:canPassHalfWall(col, row, sizeRatio) then
-    return false
-  end
-  return true
+  return false
 end
 
 function Grid:getWallTexture(col, row)
@@ -1136,7 +1154,7 @@ end
 -- Seconds removed from the melt timer when entering this tile (negative = restore time).
 function Grid:getTimeDelta(col, row)
   if self:isSnowflakeTile(col, row) then
-    return -2
+    return -self:getSnowflakeSeconds(col, row)
   end
   if self:isInFireZone(col, row) then
     return 2
@@ -1296,6 +1314,23 @@ function Grid:serialize()
     output = output .. "\n@half2\n" .. table.concat(halfTwos, "\n")
   end
 
+  -- Snowflake restore times that differ from the default (+3s).
+  local snowflakeTimes = {}
+  for _, flake in pairs(self.snowflakeTiles) do
+    local seconds = flake.seconds or DEFAULT_SNOWFLAKE_SECONDS
+    if seconds ~= DEFAULT_SNOWFLAKE_SECONDS then
+      snowflakeTimes[#snowflakeTimes + 1] = table.concat({
+        flake.col,
+        flake.row,
+        seconds,
+      }, ",")
+    end
+  end
+  table.sort(snowflakeTimes)
+  if #snowflakeTimes > 0 then
+    output = output .. "\n@snowflakes\n" .. table.concat(snowflakeTimes, "\n")
+  end
+
   local emptyUnderlays = {}
   local function recordEmpty(tiles)
     for _, tile in pairs(tiles) do
@@ -1333,6 +1368,12 @@ function Grid:load(serialized)
   local withoutEmpty, emptyUnderlaysPart = serialized:match("^(.-)\r?\n@emptyunderlays\r?\n(.*)$")
   if withoutEmpty then
     serialized = withoutEmpty
+  end
+  local snowflakesPart
+  local withoutSnowflakes, snowflakesBody = serialized:match("^(.-)\r?\n@snowflakes\r?\n(.*)$")
+  if withoutSnowflakes then
+    serialized = withoutSnowflakes
+    snowflakesPart = snowflakesBody
   end
   local half2Part
   local withoutHalf2, half2Body = serialized:match("^(.-)\r?\n@half2\r?\n(.*)$")
@@ -1543,6 +1584,19 @@ function Grid:load(serialized)
             wall.under.lean = face
             wall.under.align = nil
           end
+        end
+      end
+    end
+  end
+
+  if snowflakesPart then
+    for line in snowflakesPart:gmatch("[^\r\n]+") do
+      local col, row, seconds = line:match("^(%d+),(%d+),(%d+)$")
+      col, row, seconds = tonumber(col), tonumber(row), tonumber(seconds)
+      if col and row and seconds and self:isInside(col, row) then
+        local flake = self.snowflakeTiles[self:key(col, row)]
+        if flake then
+          flake.seconds = math.max(1, math.min(99, math.floor(seconds)))
         end
       end
     end

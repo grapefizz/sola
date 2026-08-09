@@ -287,6 +287,8 @@ local function buildLevelPreview(name)
       bgScale,
       bgScale
     )
+    love.graphics.setColor(0.01, 0.02, 0.06, 0.78)
+    love.graphics.rectangle("fill", 0, 0, pw, ph)
   else
     love.graphics.clear(0.04, 0.08, 0.16, 1)
   end
@@ -1347,7 +1349,7 @@ local function drawPlayBackground(width, height)
     x = x + tileW
   end
 
-  love.graphics.setColor(0.01, 0.02, 0.06, 0.88)
+  love.graphics.setColor(0.01, 0.02, 0.06, 0.78)
   love.graphics.rectangle("fill", 0, 0, width, height)
   love.graphics.setColor(1, 1, 1, 1)
 end

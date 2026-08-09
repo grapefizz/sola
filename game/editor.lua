@@ -19,6 +19,9 @@ local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
 local DEFAULT_LEVEL_TIME = 40
 local MAX_LEVEL_TIME = 999
+local DEFAULT_SNOWFLAKE_SECONDS = Grid.DEFAULT_SNOWFLAKE_SECONDS or 3
+local MIN_SNOWFLAKE_SECONDS = 1
+local MAX_SNOWFLAKE_SECONDS = 99
 local LEGEND_H = 132
 
 -- Single source of truth: add a tile tool here (+ applyTool / grid draw)
@@ -357,7 +360,7 @@ local function isFrontWallTool(tool)
   return tool == "front_wall" or tool == "cracked_wall"
 end
 
-local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, wallDepth, keyVariant, halfWallAlign)
+local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, wallDepth, keyVariant, halfWallAlign, snowflakeSeconds)
   local hadGround = grid:hasGround(col, row)
   local partialTile = tool ~= "ground"
     and tool ~= "ice"
@@ -385,7 +388,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
   elseif tool == "ice" then
     grid:addIce(col, row)
   elseif tool == "snowflake" then
-    grid:addSnowflake(col, row)
+    grid:addSnowflake(col, row, snowflakeSeconds or DEFAULT_SNOWFLAKE_SECONDS)
   elseif tool == "tea" then
     grid:addTea(col, row)
   elseif tool == "puzzle_piece" then
@@ -781,6 +784,12 @@ local function buttonY(index)
   return 18 + (index - 1) * BUTTON_GAP + groupGap
 end
 
+local function snowflakeStatus(seconds)
+  return "Snowflake +"
+    .. seconds
+    .. "s · [ ] / Shift+Wheel change restore time"
+end
+
 local function nextDefaultName(existing)
   local used = {}
 
@@ -813,6 +822,7 @@ function Editor.new(spawnCol, spawnRow)
     keyVariant = "top",
     halfWallFill = 0.5,
     halfWallAlign = "down",
+    snowflakeSeconds = DEFAULT_SNOWFLAKE_SECONDS,
     spawnCol = spawnCol,
     spawnRow = spawnRow,
     status = "",
@@ -1095,7 +1105,7 @@ function Editor:applyTool(tool, col, row, grid)
     return
   end
 
-  placeToolOnGrid(tool, col, row, grid, self.wallFacing, self.halfWallFill, self.wallDepth, self.keyVariant, self.halfWallAlign)
+  placeToolOnGrid(tool, col, row, grid, self.wallFacing, self.halfWallFill, self.wallDepth, self.keyVariant, self.halfWallAlign, self.snowflakeSeconds)
 end
 
 function Editor:paintAt(x, y, button, grid, camera)
@@ -1293,6 +1303,8 @@ function Editor:mousepressed(x, y, button, grid, camera)
           )
         elseif entry.name == "puzzle_door" then
           self:setStatus("Key door · walk into it while holding a full key")
+        elseif entry.name == "snowflake" then
+          self:setStatus(snowflakeStatus(self.snowflakeSeconds))
         end
       end
 
@@ -1438,6 +1450,7 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "4" then
     self.tool = "snowflake"
     self.loadDropdownOpen = false
+    self:setStatus(snowflakeStatus(self.snowflakeSeconds))
   elseif key == "5" then
     self.tool = "tea"
     self.loadDropdownOpen = false
@@ -1512,20 +1525,30 @@ function Editor:keypressed(key, grid, camera)
     self.loadDropdownOpen = false
 
   elseif key == "[" or key == "]" then
-    local delta = key == "]" and 0.1 or -0.1
-    self.halfWallFill = math.max(0.1, math.min(0.9, self.halfWallFill + delta))
-    self.halfWallFill = math.floor(self.halfWallFill * 10 + 0.5) / 10
-    clearToolIcon("half_wall")
-    clearToolIcon("half_wall2")
-    self.tool = self.tool == "half_wall2" and "half_wall2" or "half_wall"
-    self.loadDropdownOpen = false
-    self:setStatus(
-      (self.tool == "half_wall2" and "Half wall 2 fill: " or "Half wall fill: ")
-        .. math.floor(self.halfWallFill * 100 + 0.5)
-        .. "% — cube must be "
-        .. math.floor((1 - self.halfWallFill) * 100 + 0.5)
-        .. "% size or smaller"
-    )
+    if self.tool == "snowflake" then
+      local delta = key == "]" and 1 or -1
+      self.snowflakeSeconds = math.max(
+        MIN_SNOWFLAKE_SECONDS,
+        math.min(MAX_SNOWFLAKE_SECONDS, self.snowflakeSeconds + delta)
+      )
+      self.loadDropdownOpen = false
+      self:setStatus(snowflakeStatus(self.snowflakeSeconds))
+    else
+      local delta = key == "]" and 0.1 or -0.1
+      self.halfWallFill = math.max(0.1, math.min(0.9, self.halfWallFill + delta))
+      self.halfWallFill = math.floor(self.halfWallFill * 10 + 0.5) / 10
+      clearToolIcon("half_wall")
+      clearToolIcon("half_wall2")
+      self.tool = self.tool == "half_wall2" and "half_wall2" or "half_wall"
+      self.loadDropdownOpen = false
+      self:setStatus(
+        (self.tool == "half_wall2" and "Half wall 2 fill: " or "Half wall fill: ")
+          .. math.floor(self.halfWallFill * 100 + 0.5)
+          .. "% — cube must be "
+          .. math.floor((1 - self.halfWallFill) * 100 + 0.5)
+          .. "% size or smaller"
+      )
+    end
 
   elseif key == "r" then
     self.loadDropdownOpen = false
@@ -1679,6 +1702,16 @@ function Editor:wheelmoved(y, grid, camera)
     return
   end
 
+  if self.tool == "snowflake" and love.keyboard.isDown("lshift", "rshift") then
+    local delta = y > 0 and 1 or -1
+    self.snowflakeSeconds = math.max(
+      MIN_SNOWFLAKE_SECONDS,
+      math.min(MAX_SNOWFLAKE_SECONDS, self.snowflakeSeconds + delta)
+    )
+    self:setStatus(snowflakeStatus(self.snowflakeSeconds))
+    return
+  end
+
   if (self.tool == "half_wall" or self.tool == "half_wall2") and love.keyboard.isDown("lshift", "rshift") then
     local delta = y > 0 and 0.1 or -0.1
     self.halfWallFill = math.max(0.1, math.min(0.9, self.halfWallFill + delta))
@@ -1723,6 +1756,31 @@ function Editor:draw(grid, camera)
     love.graphics.setColor(0.55, 0.85, 1.0, 0.55)
     love.graphics.rectangle("line", x1 + 1, y1 + 1, x2 - x1 - 2, y2 - y1 - 2)
   end
+
+  -- Snowflake restore-time labels so non-default pickups are obvious.
+  local labelFont = getHudFont()
+  local previousLabelFont = love.graphics.getFont()
+  love.graphics.setFont(labelFont)
+  for _, flake in pairs(grid.snowflakeTiles) do
+    local seconds = flake.seconds or DEFAULT_SNOWFLAKE_SECONDS
+    local worldX, worldY = grid:tileCenter(flake.col, flake.row)
+    local sx, sy = camera:worldToScreen(worldX, worldY)
+    local label = "+" .. seconds .. "s"
+    local labelW = labelFont:getWidth(label)
+    love.graphics.setColor(0.05, 0.12, 0.22, 0.72)
+    love.graphics.rectangle(
+      "fill",
+      sx - labelW / 2 - 3,
+      sy + 6,
+      labelW + 6,
+      labelFont:getHeight() + 2,
+      3,
+      3
+    )
+    love.graphics.setColor(0.75, 0.92, 1, 0.95)
+    love.graphics.print(label, sx - labelW / 2, sy + 7)
+  end
+  love.graphics.setFont(previousLabelFont)
 
   if self.rectangle then
     local rectangle = self.rectangle
@@ -1888,6 +1946,8 @@ function Editor:draw(grid, camera)
       label = "Side (" .. (self.wallFacing == "right" and "Right" or "Left") .. ")"
     elseif tool.name == "puzzle_piece" then
       label = "Key Half · " .. (self.keyVariant == "down" and "Bottom" or "Top")
+    elseif tool.name == "snowflake" then
+      label = "Snowflake +" .. self.snowflakeSeconds .. "s"
     elseif tool.name == "half_wall" then
       label = "Half Wall · " .. (self.halfWallAlign == "up" and "Up" or "Down")
     elseif tool.name == "half_wall2" then
@@ -2094,7 +2154,7 @@ function Editor:draw(grid, camera)
   )
   love.graphics.setColor(0.58, 0.75, 0.9)
   love.graphics.printf(
-    "Left-drag Paint  ·  Shift+drag Rect  ·  Right-drag Erase  ·  R = Side L/R · Key Top/Bottom · Front Behind/In-Front  ·  [ ] Half",
+    "Left-drag Paint  ·  Shift+drag Rect  ·  Right-drag Erase  ·  R = Side L/R · Key Top/Bottom · Front Behind/In-Front  ·  [ ] Half / Snowflake time",
     12,
     legendY + 27,
     screenWidth - 24,
