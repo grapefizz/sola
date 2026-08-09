@@ -10,6 +10,10 @@ local PLAYER_FRAME_SIZE = 128
 local PLAYER_FRAME_DURATION = 1 / 24
 local PLAYER_MOVE_ANIMATION_DURATION = 0.325
 local MELT_TIME = 40
+local PUDDLE_FRAME_SIZE = 256
+local PUDDLE_FRAME_COUNT = 27
+local PUDDLE_FRAME_DURATION = 1 / 24
+local PUDDLE_ANIMATION_DURATION = PUDDLE_FRAME_COUNT * PUDDLE_FRAME_DURATION
 
 local PLAYER_SHEET_PATHS = {
   idle = "assets/player-sheet.png",
@@ -32,6 +36,30 @@ local PLAYER_MOVE_FRAME_RANGES = {
 }
 local playerAnimations = {}
 local keySprites
+<<<<<<< HEAD
+=======
+local puddleAnimation
+
+local function getPuddleAnimation()
+  if not puddleAnimation then
+    local image = love.graphics.newImage("assets/puddle-sheet.png")
+    image:setFilter("linear", "linear")
+    local frames = {}
+    for index = 1, PUDDLE_FRAME_COUNT do
+      frames[index] = love.graphics.newQuad(
+        (index - 1) * PUDDLE_FRAME_SIZE,
+        0,
+        PUDDLE_FRAME_SIZE,
+        PUDDLE_FRAME_SIZE,
+        image:getDimensions()
+      )
+    end
+    puddleAnimation = { image = image, frames = frames }
+  end
+  return puddleAnimation
+end
+
+>>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
 local function getKeySprites()
   if keySprites then
     return keySprites
@@ -294,6 +322,10 @@ function Player.new(col, row, timeLimit)
       facingDy = -1,
       sizeOffset = 0,
     },
+    puddleAnimation = {
+      active = true,
+      elapsed = 0,
+    },
     slide = {
       active = false,
       dx = 0,
@@ -488,6 +520,7 @@ function Player:beginStep(grid, col, row, deadly, jumping)
 
   self.col = col
   self.row = row
+  grid:setPuddleTarget(col, row)
 end
 
 function Player:inSideView(grid)
@@ -587,6 +620,13 @@ function Player:continueSlide(grid)
 end
 
 function Player:update(dt, grid)
+  grid:updatePuddles(dt)
+  local puddleState = self.puddleAnimation
+  puddleState.active = true
+  puddleState.elapsed = (
+    puddleState.elapsed + dt
+  ) % PUDDLE_ANIMATION_DURATION
+
   local moveAnimation = self.moveAnimation
   if moveAnimation.active then
     moveAnimation.elapsed = math.min(
@@ -611,6 +651,7 @@ function Player:update(dt, grid)
       grid:addWater(movement.toCol, movement.toRow)
       grid:consumeSnowflake(movement.toCol, movement.toRow)
 
+<<<<<<< HEAD
       -- Key halves assemble in-hand; full key opens a key door on contact.
       if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
         if self.heldItem == nil then
@@ -624,6 +665,26 @@ function Player:update(dt, grid)
             self.heldItem = "key"
             self.heldKeyVariant = nil
           end
+=======
+
+  movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
+  if movement.elapsed >= movement.duration then
+    grid:addPuddleTrail(
+      movement.fromCol,
+      movement.fromRow,
+      movement.toCol,
+      movement.toRow
+    )
+    grid:consumeSnowflake(movement.toCol, movement.toRow)
+
+    -- Key halves assemble in-hand; full key opens a key door on contact.
+    if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
+      if self.heldItem == nil then
+        local ok, variant = grid:consumePuzzlePiece(movement.toCol, movement.toRow)
+        if ok then
+          self.heldItem = "key_half"
+          self.heldKeyVariant = variant or "top"
+>>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
         end
       elseif self.heldItem == "key" and grid:isPuzzleDoor(movement.toCol, movement.toRow) then
         if grid:openPuzzleDoor(movement.toCol, movement.toRow) then
@@ -784,6 +845,34 @@ function Player:draw(grid, camera)
 
   local x, y = camera:worldToScreen(worldX, worldY)
   local screenSize = size * camera.zoom
+  local puddleSize = screenSize
+
+  local puddleState = self.puddleAnimation
+  if puddleState.active then
+    local puddle = getPuddleAnimation()
+    local frameIndex = math.min(
+      PUDDLE_FRAME_COUNT,
+      math.floor(puddleState.elapsed / PUDDLE_FRAME_DURATION) + 1
+    )
+    love.graphics.setColor(1, 1, 1, 1)
+    if mode == "side" then
+      love.graphics.draw(
+        puddle.image, puddle.frames[frameIndex], x, y, 0,
+        puddleSize / PUDDLE_FRAME_SIZE,
+        puddleSize / PUDDLE_FRAME_SIZE,
+        PUDDLE_FRAME_SIZE / 2,
+        PUDDLE_FRAME_SIZE
+      )
+    else
+      love.graphics.draw(
+        puddle.image, puddle.frames[frameIndex], x, y, 0,
+        puddleSize / PUDDLE_FRAME_SIZE,
+        puddleSize / PUDDLE_FRAME_SIZE,
+        PUDDLE_FRAME_SIZE / 2,
+        PUDDLE_FRAME_SIZE / 2
+      )
+    end
+  end
 
   local moveAnimation = self.moveAnimation
   local isMoving = moveAnimation.active

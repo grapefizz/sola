@@ -148,7 +148,7 @@ local musicSrc
 local musicVol = 0.55
 local sfxVol = 0.8
 
--- gameplay from game/ (water trails, fire, editor) — modules untouched
+-- gameplay from game/ (fire, editor, perspective zones)
 local SPAWN_COL = math.ceil(MAP_COLS / 2)
 local SPAWN_ROW = math.ceil(MAP_ROWS / 2)
 local grid, player, camera, editor
@@ -249,7 +249,6 @@ local function buildLevelPreview(name)
   snap:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
   snap:removePressureDoor(SPAWN_COL, SPAWN_ROW)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
-  snap:addWater(SPAWN_COL, SPAWN_ROW)
 
   local worldW, worldH = snap:worldBounds()
   local scale = math.min(pw / worldW, ph / worldH)
@@ -429,10 +428,10 @@ local function closePlayOverlay()
 end
 
 local function restartRun()
+  grid:clearPuddles()
   if currentLevelName and editor then
     editor:loadLevel(grid, currentLevelName)
   else
-    grid:clearWater()
     grid:setGround(SPAWN_COL, SPAWN_ROW)
     grid:removeFire(SPAWN_COL, SPAWN_ROW)
     grid:removeIce(SPAWN_COL, SPAWN_ROW)
@@ -449,7 +448,6 @@ local function restartRun()
   camera = Camera.new(cameraX, cameraY, GAMEPLAY_MIN_ZOOM)
   cameraFollowX, cameraFollowY = cameraX, cameraY
   cameraPerspective = playerPerspectiveMode()
-  grid:addWater(player.col, player.row)
   playOverlay = nil
   overlayReason = nil
   overlayIntro = 0
@@ -1995,11 +1993,10 @@ function love.keypressed(key)
     if key == "e" then
       if editor.active then
         editor:setActive(false)
-        grid:clearWater()
         restartRun()
       else
         editor:setActive(true)
-        grid:clearWater()
+        grid:clearPuddles()
         if currentLevelName then
           editor:loadLevel(grid, currentLevelName)
         end
