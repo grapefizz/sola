@@ -100,6 +100,7 @@ local function getPreviewSprites()
     buttonPressed = love.graphics.newImage("assets/PRESSED BUTTON FINA.png"),
     doorClosed = love.graphics.newImage("assets/door-closed.png"),
     doorOpen = love.graphics.newImage("assets/door-open.png"),
+    pressureDoor = love.graphics.newImage("assets/Pressure_door.png"),
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
     wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
@@ -286,6 +287,13 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     local img = sprites.buttonUnpressed
     local iw, ih = img:getDimensions()
     local target = size * 0.88
+    local scale = target / math.max(iw, ih)
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
+  elseif tool == "pressure_door" then
+    local img = sprites.pressureDoor
+    local iw, ih = img:getDimensions()
+    local target = size * 0.98
     local scale = target / math.max(iw, ih)
     withAlpha(1, 1, 1, 1, alpha)
     love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
@@ -524,13 +532,12 @@ local function drawActionIcon(kind, size)
     love.graphics.setColor(0.92, 0.78, 0.58, 1)
     love.graphics.rectangle("fill", x + w * 0.52, y + 2, w * 0.38, 3, 1, 1)
   elseif kind == "pressure_door" then
-    love.graphics.setColor(0.12, 0.36, 0.24, 1)
-    love.graphics.rectangle("fill", x + 2, y + 1, w - 4, w - 2, 2, 2)
-    love.graphics.setColor(0.36, 0.92, 0.62, 1)
-    love.graphics.setLineWidth(1.5)
-    love.graphics.rectangle("line", x + 3, y + 2, w - 6, w - 4, 2, 2)
-    love.graphics.line(x + w * 0.5, y + w * 0.30, x + w * 0.5, y + w * 0.70)
-    love.graphics.line(x + w * 0.28, y + w * 0.50, x + w * 0.72, y + w * 0.50)
+    local sprites = getPreviewSprites()
+    local img = sprites.pressureDoor
+    local iw, ih = img:getDimensions()
+    local scale = (w * 0.92) / math.max(iw, ih)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, x + w * 0.5, y + w * 0.5, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif kind == "puzzle_door" then
     local sprites = getPreviewSprites()
     local img = sprites.doorClosed

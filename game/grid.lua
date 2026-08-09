@@ -41,6 +41,7 @@ local function getTileSprites()
     buttonPressed = love.graphics.newImage("assets/PRESSED BUTTON FINA.png"),
     doorClosed = love.graphics.newImage("assets/door-closed.png"),
     doorOpen = love.graphics.newImage("assets/door-open.png"),
+    pressureDoor = love.graphics.newImage("assets/Pressure_door.png"),
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
     wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
@@ -64,6 +65,7 @@ local function getTileSprites()
   tileSprites.buttonPressed:setFilter("linear", "linear")
   tileSprites.doorClosed:setFilter("linear", "linear")
   tileSprites.doorOpen:setFilter("linear", "linear")
+  tileSprites.pressureDoor:setFilter("linear", "linear")
   tileSprites.wall:setFilter("linear", "linear")
   tileSprites.brickEnd:setFilter("linear", "linear")
   tileSprites.wallHalf2:setFilter("linear", "linear")
@@ -1834,98 +1836,6 @@ local function drawKeySprite(centerX, centerY, size, section, full, alpha, sideV
 end
 
 -- Side-view doors share front-wall elevation size (wall height above floor face).
-local function drawDoorElevAt(x, floorTop, size, zoom, open, palette)
-  local wallH = Perspective.wallHeight(size, 1)
-  local wallY = floorTop - wallH
-  local depth = size * 0.18
-  local wallW = size - 2
-  local shade = open and 0.72 or 1
-
-  -- Same extruded block silhouette as front walls.
-  love.graphics.setColor(
-    palette.side[1] * shade,
-    palette.side[2] * shade,
-    palette.side[3] * shade,
-    0.95
-  )
-  love.graphics.polygon(
-    "fill",
-    x + wallW, wallY,
-    x + wallW + depth, wallY - depth * 0.4,
-    x + wallW + depth, floorTop - depth * 0.4,
-    x + wallW, floorTop
-  )
-  love.graphics.setColor(
-    palette.top[1] * shade,
-    palette.top[2] * shade,
-    palette.top[3] * shade,
-    1
-  )
-  love.graphics.polygon(
-    "fill",
-    x + 1, wallY,
-    x + wallW, wallY,
-    x + wallW + depth, wallY - depth * 0.4,
-    x + 1 + depth, wallY - depth * 0.4
-  )
-
-  if open then
-    -- Open: wall-sized frame with hollow center (doorway).
-    local frame = math.max(3, size * 0.08)
-    love.graphics.setColor(palette.face[1] * 0.55, palette.face[2] * 0.55, palette.face[3] * 0.55, 0.96)
-    love.graphics.rectangle("fill", x + 1, wallY, wallW, wallH, 2, 2)
-    love.graphics.setColor(0.025, 0.05, 0.08, 0.98)
-    love.graphics.rectangle(
-      "fill",
-      x + 1 + frame,
-      wallY + frame,
-      wallW - frame * 2,
-      wallH - frame * 2,
-      1,
-      1
-    )
-    love.graphics.setColor(palette.line[1], palette.line[2], palette.line[3], 0.9)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", x + 1, wallY, wallW, wallH, 2, 2)
-    love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.75)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.line(x + 1 + frame, wallY + frame, x + wallW - frame, wallY + frame)
-  else
-    love.graphics.setColor(palette.face[1], palette.face[2], palette.face[3], 0.98)
-    love.graphics.rectangle("fill", x + 1, wallY, wallW, wallH, 2, 2)
-    love.graphics.setColor(palette.line[1], palette.line[2], palette.line[3], 0.95)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", x + 1, wallY, wallW, wallH, 2, 2)
-
-    -- Panel seams (wall-like brick door face).
-    love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.55)
-    love.graphics.setLineWidth(1 / zoom)
-    local midX = x + 1 + wallW * 0.5
-    love.graphics.line(midX, wallY + 5, midX, floorTop - 5)
-    love.graphics.line(x + 6, wallY + wallH * 0.48, x + wallW - 4, wallY + wallH * 0.48)
-
-    if palette.knob then
-      love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.95)
-      love.graphics.circle("fill", midX + wallW * 0.18, wallY + wallH * 0.48, 2.5)
-    end
-    if palette.mark == "plus" then
-      love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.9)
-      love.graphics.setLineWidth(2 / zoom)
-      love.graphics.line(x + wallW * 0.28, wallY + wallH * 0.5, x + wallW * 0.72, wallY + wallH * 0.5)
-      love.graphics.line(x + wallW * 0.5, wallY + wallH * 0.30, x + wallW * 0.5, wallY + wallH * 0.70)
-    end
-  end
-end
-
-local PRESSURE_DOOR_PALETTE = {
-  side = { 0.12, 0.24, 0.16 },
-  top = { 0.42, 0.88, 0.62 },
-  face = { 0.14, 0.30, 0.20 },
-  line = { 0.42, 0.92, 0.64 },
-  accent = { 0.55, 1.0, 0.74 },
-  mark = "plus",
-}
-
 local function drawPuzzleDoorAt(x, y, size, zoom, side, open)
   local sprites = getTileSprites()
   local image = open and sprites.doorOpen or sprites.doorClosed
@@ -1948,37 +1858,24 @@ local function drawPuzzleDoorAt(x, y, size, zoom, side, open)
 end
 
 local function drawPressureDoorAt(x, y, size, zoom, side, open)
-  if side then
-    drawDoorElevAt(x, y + size, size, zoom, open, PRESSURE_DOOR_PALETTE)
-    return
-  end
-
-  local pad = size * 0.1
-  local dx = x + pad
-  local dy = y + pad
-  local dw = size - pad * 2
-  local dh = size - pad * 2
-  if open then
-    love.graphics.setColor(0.03, 0.10, 0.07, 0.96)
-    love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.30, 0.88, 0.60, 0.9)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.42, 1.0, 0.70, 0.8)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.line(dx + dw * 0.22, dy + dh * 0.5, dx + dw * 0.78, dy + dh * 0.5)
-    love.graphics.line(dx + dw * 0.50, dy + dh * 0.32, dx + dw * 0.78, dy + dh * 0.5, dx + dw * 0.50, dy + dh * 0.68)
-  else
-    love.graphics.setColor(0.10, 0.22, 0.16, 0.98)
-    love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.30, 0.78, 0.52, 0.95)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.52, 0.95, 0.70, 0.9)
-    love.graphics.setLineWidth(2 / zoom)
-    love.graphics.line(dx + dw * 0.28, dy + dh * 0.5, dx + dw * 0.72, dy + dh * 0.5)
-    love.graphics.line(dx + dw * 0.5, dy + dh * 0.30, dx + dw * 0.5, dy + dh * 0.70)
-  end
+  local sprites = getTileSprites()
+  local image = open and sprites.doorOpen or sprites.pressureDoor
+  local iw, ih = image:getDimensions()
+  local scale = (size * 0.98) / math.max(iw, ih)
+  local centerX = x + size * 0.5
+  -- Side view: y is floorTop - size. Top-down: center in the tile.
+  local anchorY = side and (y + size) or (y + size * 0.5)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(
+    image,
+    centerX,
+    anchorY,
+    0,
+    scale,
+    scale,
+    iw * 0.5,
+    side and ih or (ih * 0.5)
+  )
 end
 
 local function drawPressurePlateAt(centerX, centerY, size, zoom, pressed, side)

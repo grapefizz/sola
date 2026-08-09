@@ -417,8 +417,7 @@ function Player:canStepTo(grid, col, row)
   col, row = grid:clamp(col, row)
   local sizeRatio = self:sizeRatio()
   if (col == self.col and row == self.row)
-    or not grid:hasGround(col, row)
-    or (grid:isSpawnTile(col, row) and grid:isFridgeTile(col, row)) then
+    or not grid:hasGround(col, row) then
     return false
   end
   -- Full key lets you walk onto a closed key door to unlock it.
@@ -436,8 +435,7 @@ end
 -- Solid obstacles you cannot vault over with a jump.
 -- Low half / behind walls can still be jumped *over*, but never landed on.
 function Player:isJumpBlocked(grid, col, row)
-  if (grid:isSpawnTile(col, row) and grid:isFridgeTile(col, row))
-    or grid:isBoulderTile(col, row)
+  if grid:isBoulderTile(col, row)
     or grid:isPuzzleDoor(col, row)
     or (grid:isPressureDoor(col, row) and not grid:isPressureDoorOpen()) then
     return true
@@ -673,7 +671,9 @@ function Player:update(dt, grid)
         self.dead = true
         self.timeRemaining = 0
         self:stopSlide()
-      elseif grid:isFridgeTile(movement.toCol, movement.toRow) then
+      -- Exit fridges only — spawn fridge is walkable scenery.
+      elseif grid:isFridgeTile(movement.toCol, movement.toRow)
+        and not grid:isSpawnTile(movement.toCol, movement.toRow) then
         self.inFridge = true
         self:stopSlide()
       elseif grid:isTeaTile(movement.toCol, movement.toRow) then
