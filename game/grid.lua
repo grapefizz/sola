@@ -7,7 +7,20 @@ local TEXTURE_GRID_SIZE = 1
 local FIRE_FRAME_SIZE = 128
 local FIRE_FRAME_COUNT = 9
 local FIRE_FRAME_DURATION = 1 / 12
+<<<<<<< HEAD
 local DEFAULT_SNOWFLAKE_SECONDS = 3
+=======
+local PUDDLE_FRAME_SIZE = 256
+-- One long connecting transition frame followed by the source GIF's 12
+-- visible drag frames. Its 15 fully transparent trailing frames are omitted.
+local PUDDLE_FRAME_COUNT = 13
+local PUDDLE_FRAME_DURATION = 1 / 24
+local PUDDLE_ANIMATION_DURATION = PUDDLE_FRAME_COUNT * PUDDLE_FRAME_DURATION
+-- The visible water is centered around y=216 in its 256px source frame.
+-- Counter this transparent-canvas offset when the strip rotates vertically.
+local PUDDLE_CONTENT_Y_OFFSET = (216 - PUDDLE_FRAME_SIZE * 0.5)
+  / PUDDLE_FRAME_SIZE
+>>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
 local tileSprites
 
 Grid.DEFAULT_SNOWFLAKE_SECONDS = DEFAULT_SNOWFLAKE_SECONDS
@@ -39,7 +52,12 @@ local function getTileSprites()
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
+<<<<<<< HEAD
     wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
+=======
+    puddleLong = love.graphics.newImage("assets/puddlelong.png"),
+    puddleDrag = love.graphics.newImage("assets/puddledrag-sheet.png"),
+>>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -58,7 +76,22 @@ local function getTileSprites()
   tileSprites.crackedBoulder:setFilter("linear", "linear")
   tileSprites.wall:setFilter("linear", "linear")
   tileSprites.brickEnd:setFilter("linear", "linear")
+<<<<<<< HEAD
   tileSprites.wallHalf2:setFilter("linear", "linear")
+=======
+  tileSprites.puddleLong:setFilter("linear", "linear")
+  tileSprites.puddleDrag:setFilter("linear", "linear")
+  tileSprites.puddleDragFrames = {}
+  for index = 1, PUDDLE_FRAME_COUNT do
+    tileSprites.puddleDragFrames[index] = love.graphics.newQuad(
+      (index - 1) * PUDDLE_FRAME_SIZE,
+      0,
+      PUDDLE_FRAME_SIZE,
+      PUDDLE_FRAME_SIZE,
+      tileSprites.puddleDrag:getDimensions()
+    )
+  end
+>>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -145,7 +178,7 @@ function Grid.new(size, columns, rows, fillGround)
     columns = columns,
     rows = rows,
     groundTiles = {},
-    waterTiles = {},
+    puddleTiles = {},
     fireTiles = {},
     iceTiles = {},
     mossTiles = {},
@@ -230,7 +263,6 @@ function Grid:occupiedBounds(padding)
   end
 
   consider(self.groundTiles)
-  consider(self.waterTiles)
   consider(self.fireTiles)
   consider(self.iceTiles)
   consider(self.mossTiles)
@@ -325,10 +357,6 @@ function Grid:erase(col, row)
     end
   end
 
-  if self.waterTiles[key] then
-    self.waterTiles[key] = nil
-    return "water"
-  end
   if self.iceTiles[key] then
     self.iceTiles[key] = nil
     return "ice"
@@ -352,7 +380,7 @@ end
 
 function Grid:clear()
   self.groundTiles = {}
-  self.waterTiles = {}
+  self.puddleTiles = {}
   self.fireTiles = {}
   self.iceTiles = {}
   self.mossTiles = {}
@@ -366,6 +394,83 @@ function Grid:clear()
   self.wallTiles = {}
   self.boulderTiles = {}
   self.sideViewTiles = {}
+end
+
+function Grid:clearPuddles()
+  self.puddleTiles = {}
+end
+
+function Grid:addPuddleTrail(col, row, targetCol, targetRow)
+  -- Only the tile immediately behind the player owns the drag effect. A new
+  -- step replaces an unfinished animation instead of leaving several behind.
+  self.puddleTiles = {}
+  if self:isInside(col, row) then
+    self.puddleTiles[self:key(col, row)] = {
+      col = col,
+      row = row,
+      age = 0,
+      elapsed = 0,
+      dx = (targetCol or col) - col,
+      dy = (targetRow or row) - row,
+      targetCol = targetCol or col,
+      targetRow = targetRow or row,
+    }
+  end
+end
+
+function Grid:setPuddleTarget(col, row)
+  for _, puddle in pairs(self.puddleTiles) do
+    puddle.targetCol = col
+    puddle.targetRow = row
+  end
+end
+
+function Grid:updatePuddles(dt)
+  for key, puddle in pairs(self.puddleTiles) do
+    puddle.age = (puddle.age or 0) + dt
+    puddle.elapsed = ((puddle.elapsed or 0) + dt)
+      % PUDDLE_ANIMATION_DURATION
+    if puddle.age >= PUDDLE_ANIMATION_DURATION then
+      self.puddleTiles[key] = nil
+    end
+  end
+end
+
+local function puddleFrame(sprites, puddle)
+  local elapsed = math.max(0, puddle.elapsed or 0)
+  local index = math.min(
+    PUDDLE_FRAME_COUNT,
+    math.floor(elapsed / PUDDLE_FRAME_DURATION) + 1
+  )
+  return sprites.puddleDragFrames[index]
+end
+
+local function puddleTransform(puddle)
+  -- Keep the artwork upright for horizontal movement. Mirroring instead of
+  -- rotating 180 degrees keeps its wet edge aligned with the player's puddle.
+  if (puddle.dx or 0) > 0 then return 0, -1 end
+  if (puddle.dx or 0) < 0 then return 0, 1 end
+  if (puddle.dy or 0) > 0 then return -math.pi * 0.5, 1 end
+  if (puddle.dy or 0) < 0 then return math.pi * 0.5, 1 end
+  return 0, 1
+end
+
+local function puddleDirection(puddle)
+  local dx = puddle.dx or 0
+  local dy = puddle.dy or 0
+  return dx == 0 and 0 or (dx > 0 and 1 or -1),
+    dy == 0 and 0 or (dy > 0 and 1 or -1)
+end
+
+local function eachPuddleBridgeTile(puddle, callback)
+  local dx = (puddle.targetCol or puddle.col) - puddle.col
+  local dy = (puddle.targetRow or puddle.row) - puddle.row
+  local stepX = dx == 0 and 0 or (dx > 0 and 1 or -1)
+  local stepY = dy == 0 and 0 or (dy > 0 and 1 or -1)
+  local distance = math.max(math.abs(dx), math.abs(dy))
+  for step = 1, distance - 1 do
+    callback(puddle.col + stepX * step, puddle.row + stepY * step)
+  end
 end
 
 function Grid:addSideView(col, row)
@@ -394,38 +499,12 @@ end
 
 
 
-function Grid:clearWater()
-  self.waterTiles = {}
-end
-
-
-
-function Grid:addWater(col, row)
-  if self:hasGround(col, row)
-    and not self:isInFireZone(col, row)
-    and not self:isIceTile(col, row)
-    and not self:isTeaTile(col, row)
-    and not self:isBlocking(col, row)
-  then
-    self.waterTiles[self:key(col, row)] = { col = col, row = row }
-  end
-end
-
-
-
-function Grid:hasWater(col, row)
-  return self.waterTiles[self:key(col, row)] ~= nil
-end
-
-
-
 function Grid:addFire(col, row)
   if not self:isInside(col, row) then
     return
   end
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.iceTiles[key] = nil
   self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
@@ -458,7 +537,6 @@ function Grid:addIce(col, row)
   self:setGround(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
-  self.waterTiles[key] = nil
   self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
@@ -488,7 +566,6 @@ function Grid:addMoss(col, row)
   self:setGround(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
-  self.waterTiles[key] = nil
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
@@ -582,7 +659,6 @@ function Grid:addTea(col, row)
   end
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.mossTiles[key] = nil
@@ -675,7 +751,6 @@ function Grid:addPuzzleDoor(col, row)
   end
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
   self.mossTiles[key] = nil
@@ -716,7 +791,6 @@ function Grid:addPressureDoor(col, row)
   end
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
@@ -743,7 +817,6 @@ function Grid:addPressurePlate(col, row)
   end
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
@@ -796,7 +869,6 @@ function Grid:addWall(col, row, texture, lean, options)
 
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
@@ -985,7 +1057,6 @@ function Grid:addBoulder(col, row, options)
   options = options or {}
   self:setGround(col, row)
   local key = self:key(col, row)
-  self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   -- Keep ice so the boulder can sit on top of it.
   self.snowflakeTiles[key] = nil
@@ -2149,6 +2220,45 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     end
   end
 
+  for _, puddle in pairs(self.puddleTiles) do
+    if isVisible(puddle) and include(puddle.col, puddle.row) then
+      local x, y = self:tileOrigin(puddle.col, puddle.row)
+      local angle, directionScale = puddleTransform(puddle)
+      local directionX, directionY = puddleDirection(puddle)
+      local overlap = self.size * 0.06
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.puddleDrag,
+        puddleFrame(sprites, puddle),
+        x + self.size * 0.5
+          + directionX * overlap
+          - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
+        y + self.size * 0.5 + directionY * overlap,
+        angle,
+        directionScale * self.size * 1.12 / PUDDLE_FRAME_SIZE,
+        self.size / PUDDLE_FRAME_SIZE,
+        PUDDLE_FRAME_SIZE * 0.5,
+        PUDDLE_FRAME_SIZE * 0.5
+      )
+      eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
+        if include(bridgeCol, bridgeRow) then
+          local bridgeX, bridgeY = self:tileOrigin(bridgeCol, bridgeRow)
+          love.graphics.draw(
+            sprites.puddleLong,
+            bridgeX + self.size * 0.5
+              - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
+            bridgeY + self.size * 0.5,
+            angle,
+            directionScale * self.size * 1.12 / sprites.puddleLong:getWidth(),
+            self.size / sprites.puddleLong:getHeight(),
+            sprites.puddleLong:getWidth() * 0.5,
+            sprites.puddleLong:getHeight() * 0.5
+          )
+        end
+      end)
+    end
+  end
+
   -- Behind full walls get an inset ground pad; all walls retain their ground tile.
   local behindPad = math.max(8, math.floor(self.size * 0.18))
   for col = minCol, maxCol do
@@ -2194,17 +2304,6 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
           end
         end
       end
-    end
-  end
-
-  love.graphics.setLineWidth(1 / zoom)
-  for _, tile in pairs(self.waterTiles) do
-    if isVisible(tile) and include(tile.col, tile.row) then
-      local x, y = self:tileOrigin(tile.col, tile.row)
-      love.graphics.setColor(0.10, 0.48, 0.72, 0.75)
-      love.graphics.rectangle("fill", x + 2, y + 2, self.size - 4, self.size - 4, 3, 3)
-      love.graphics.setColor(0.40, 0.78, 0.95, 0.65)
-      love.graphics.line(x + 8, y + 13, x + self.size - 8, y + 13)
     end
   end
 
@@ -2718,11 +2817,44 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     end
 
     for col = minCol, maxCol do
-      if self:hasWater(col, row) and include(col, row) then
+      if self.puddleTiles[self:key(col, row)] and include(col, row) then
+        local puddle = self.puddleTiles[self:key(col, row)]
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
-        love.graphics.setColor(0.12, 0.52, 0.78, 0.85)
-        love.graphics.rectangle("fill", x + 3, floorTop + 2, size - 6, math.max(2, faceH - 4), 1, 1)
+        local angle, directionScale = puddleTransform(puddle)
+        local directionX, directionY = puddleDirection(puddle)
+        local overlap = size * 0.06
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(
+          sprites.puddleDrag,
+          puddleFrame(sprites, puddle),
+          x + size * 0.5
+            + directionX * overlap
+            - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
+          floorTop - size * 0.5 + directionY * overlap,
+          angle,
+          directionScale * size * 1.12 / PUDDLE_FRAME_SIZE,
+          size / PUDDLE_FRAME_SIZE,
+          PUDDLE_FRAME_SIZE * 0.5,
+          PUDDLE_FRAME_SIZE * 0.5
+        )
+        eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
+          if include(bridgeCol, bridgeRow) then
+            local bridgeX = (bridgeCol - 1) * size
+            local bridgeFloorTop = cellFloorTop(bridgeCol, bridgeRow)
+            love.graphics.draw(
+              sprites.puddleLong,
+              bridgeX + size * 0.5
+                - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
+              bridgeFloorTop - size * 0.5,
+              angle,
+              directionScale * size * 1.12 / sprites.puddleLong:getWidth(),
+              size / sprites.puddleLong:getHeight(),
+              sprites.puddleLong:getWidth() * 0.5,
+              sprites.puddleLong:getHeight() * 0.5
+            )
+          end
+        end)
       end
     end
 
