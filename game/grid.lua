@@ -36,6 +36,7 @@ local function getTileSprites()
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
+    wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -54,6 +55,7 @@ local function getTileSprites()
   tileSprites.crackedBoulder:setFilter("linear", "linear")
   tileSprites.wall:setFilter("linear", "linear")
   tileSprites.brickEnd:setFilter("linear", "linear")
+  tileSprites.wallHalf2:setFilter("linear", "linear")
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -85,6 +87,8 @@ local function drawWallTexture(image, x, y, width, height, tileSize, alpha, alig
   end
   local sourceY = imageHeight - sourceHeight
   local key = table.concat({
+    imageWidth,
+    imageHeight,
     math.floor(sourceX + 0.5),
     math.floor(sourceY + 0.5),
     math.floor(sourceWidth + 0.5),
@@ -791,6 +795,15 @@ function Grid:addWall(col, row, texture, lean, options)
 
   local existing = self.wallTiles[key]
   local under = nil
+  local align = nil
+  if options.half and not options.half2 and options.align == "up" then
+    align = "up"
+  end
+  local half2 = options.half and options.half2 and true or false
+  local halfLean = nil
+  if half2 then
+    halfLean = lean == "right" and "right" or "left"
+  end
 
   -- Side walls can share a cell with behind walls and half walls.
   if texture == "side" and existing then
@@ -801,6 +814,9 @@ function Grid:addWall(col, row, texture, lean, options)
         cracked = existing.cracked and true or false,
         half = existing.half and true or false,
         fill = existing.fill,
+        align = existing.align == "up" and "up" or nil,
+        half2 = existing.half2 and true or false,
+        lean = existing.half2 and (existing.lean == "right" and "right" or "left") or nil,
       }
     elseif existing.under then
       under = existing.under
@@ -815,6 +831,9 @@ function Grid:addWall(col, row, texture, lean, options)
       cracked = options.cracked and true or false,
       half = options.half and true or false,
       fill = fill,
+      align = align,
+      half2 = half2,
+      lean = halfLean,
     }
     return
   end
@@ -823,11 +842,13 @@ function Grid:addWall(col, row, texture, lean, options)
     col = col,
     row = row,
     texture = texture,
-    lean = texture == "side" and lean or nil,
+    lean = halfLean or (texture == "side" and lean or nil),
     creased = options.creased and true or false,
     cracked = options.cracked and true or false,
     half = options.half and true or false,
     fill = fill,
+    align = align,
+    half2 = half2,
     depth = depth,
     under = under,
   }
@@ -855,6 +876,9 @@ function Grid:breakWall(col, row)
       cracked = under.cracked and true or false,
       half = under.half and true or false,
       fill = under.fill,
+      align = under.align == "up" and "up" or nil,
+      half2 = under.half2 and true or false,
+      lean = under.half2 and (under.lean == "right" and "right" or "left") or nil,
       depth = "behind",
       under = nil,
     }
@@ -888,6 +912,21 @@ function Grid:getHalfWallFill(col, row)
   local wall = self.wallTiles[self:key(col, row)]
   if wall and wall.half then
     return wall.fill or 0.5
+  end
+  return nil
+end
+
+-- "down" = slab on the bottom / floor; "up" = flipped to the top / ceiling.
+function Grid:getHalfWallAlign(col, row)
+  local wall = self.wallTiles[self:key(col, row)]
+  if not wall then
+    return nil
+  end
+  if wall.half then
+    return wall.align == "up" and "up" or "down"
+  end
+  if wall.under and wall.under.half then
+    return wall.under.align == "up" and "up" or "down"
   end
   return nil
 end
@@ -1221,6 +1260,42 @@ function Grid:serialize()
     output = output .. "\n@walljoins\n" .. table.concat(joins, "\n")
   end
 
+  -- Half walls flipped to the top of the cell (default is bottom / down).
+  local halfUps = {}
+  for _, wall in pairs(self.wallTiles) do
+    local up = (wall.half and wall.align == "up")
+      or (wall.under and wall.under.half and wall.under.align == "up")
+    if up then
+      halfUps[#halfUps + 1] = wall.col .. "," .. wall.row
+    end
+  end
+  table.sort(halfUps)
+  if #halfUps > 0 then
+    output = output .. "\n@halfup\n" .. table.concat(halfUps, "\n")
+  end
+
+  -- Half Wall 2: left/right vertical halves (halved full-wall texture).
+  local halfTwos = {}
+  for _, wall in pairs(self.wallTiles) do
+    local target = nil
+    if wall.half and wall.half2 then
+      target = wall
+    elseif wall.under and wall.under.half and wall.under.half2 then
+      target = wall.under
+    end
+    if target then
+      halfTwos[#halfTwos + 1] = table.concat({
+        wall.col,
+        wall.row,
+        (target.lean == "right") and "right" or "left",
+      }, ",")
+    end
+  end
+  table.sort(halfTwos)
+  if #halfTwos > 0 then
+    output = output .. "\n@half2\n" .. table.concat(halfTwos, "\n")
+  end
+
   local emptyUnderlays = {}
   local function recordEmpty(tiles)
     for _, tile in pairs(tiles) do
@@ -1258,6 +1333,18 @@ function Grid:load(serialized)
   local withoutEmpty, emptyUnderlaysPart = serialized:match("^(.-)\r?\n@emptyunderlays\r?\n(.*)$")
   if withoutEmpty then
     serialized = withoutEmpty
+  end
+  local half2Part
+  local withoutHalf2, half2Body = serialized:match("^(.-)\r?\n@half2\r?\n(.*)$")
+  if withoutHalf2 then
+    serialized = withoutHalf2
+    half2Part = half2Body
+  end
+  local halfUpPart
+  local withoutHalfUp, halfUpBody = serialized:match("^(.-)\r?\n@halfup\r?\n(.*)$")
+  if withoutHalfUp then
+    serialized = withoutHalfUp
+    halfUpPart = halfUpBody
   end
   local basePart, wallJoinsPart = serialized:match("^(.-)\r?\n@walljoins\r?\n(.*)$")
   if basePart then
@@ -1418,6 +1505,48 @@ function Grid:load(serialized)
     end
   end
 
+  if halfUpPart then
+    for line in halfUpPart:gmatch("[^\r\n]+") do
+      local col, row = line:match("^(%d+),(%d+)$")
+      col, row = tonumber(col), tonumber(row)
+      if col and row then
+        local wall = self.wallTiles[self:key(col, row)]
+        if wall then
+          if wall.half then
+            wall.align = "up"
+          elseif wall.under and wall.under.half then
+            wall.under.align = "up"
+          end
+        end
+      end
+    end
+  end
+
+  if half2Part then
+    for line in half2Part:gmatch("[^\r\n]+") do
+      local col, row, lean = line:match("^(%d+),(%d+),(%w+)$")
+      if not col then
+        col, row = line:match("^(%d+),(%d+)$")
+        lean = "left"
+      end
+      col, row = tonumber(col), tonumber(row)
+      if col and row then
+        local wall = self.wallTiles[self:key(col, row)]
+        if wall then
+          local face = lean == "right" and "right" or "left"
+          if wall.half then
+            wall.half2 = true
+            wall.lean = face
+            wall.align = nil
+          elseif wall.under and wall.under.half then
+            wall.under.half2 = true
+            wall.under.lean = face
+            wall.under.align = nil
+          end
+        end
+      end
+    end
+  end
 
   if emptyUnderlaysPart then
     for line in emptyUnderlaysPart:gmatch("[^\r\n]+") do
@@ -1804,11 +1933,7 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
       and tile.row <= maxRow + padding
   end
 
-  -- Skip full-canvas clear when compositing after another pass.
-  if filter ~= "side" then
-    love.graphics.setColor(0.025, 0.05, 0.09)
-    love.graphics.rectangle("fill", 0, 0, width, height)
-  end
+  -- Void stays transparent so the menu cave background shows through.
 
   -- Obstacles and props are layered over terrain. If terrain exists it remains
   -- visible; when the editor stored no underlay, the unused space stays empty.
@@ -1820,31 +1945,52 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     local fill = wall.half and (wall.fill or 0.5) or 1
     local wallH
     local wallY
-    if wall.half then
+    local wallW = self.size
+    local wallX = x
+    if wall.half and wall.half2 then
+      -- Left/right vertical half (like a thick side wall).
+      wallW = self.size * fill
+      wallH = self.size
+      wallY = y
+      local lean = wall.lean or "left"
+      wallX = lean == "right" and (x + self.size - wallW) or x
+    elseif wall.half then
       wallH = self.size * fill
-      wallY = y + self.size - wallH
+      if wall.align == "up" then
+        wallY = y
+      else
+        wallY = y + self.size - wallH
+      end
     else
       wallH = self.size - 2
       wallY = y + 1
     end
 
-    drawWallTexture(sprites.wall, x, wallY, self.size, wallH, self.size, 0.98)
+    local image = sprites.wall
+    local texTile = self.size
+    local align = nil
+    if wall.half and wall.half2 then
+      image = sprites.wallHalf2
+      texTile = wallW
+      align = wall.lean == "right" and "right" or "left"
+    end
+    drawWallTexture(image, wallX, wallY, wallW, wallH, texTile, 0.98, align)
 
     if wall.cracked then
       love.graphics.setColor(0.18, 0.10, 0.06, 0.95)
       love.graphics.setLineWidth(2 / zoom)
       love.graphics.line(
-        x + 8, wallY + 6,
-        x + self.size * 0.42, wallY + wallH * 0.45,
-        x + 10, wallY + wallH - 7
+        wallX + 8, wallY + 6,
+        wallX + wallW * 0.42, wallY + wallH * 0.45,
+        wallX + 10, wallY + wallH - 7
       )
       love.graphics.line(
-        x + self.size * 0.42, wallY + wallH * 0.45,
-        x + self.size - 9, wallY + wallH * 0.28
+        wallX + wallW * 0.42, wallY + wallH * 0.45,
+        wallX + wallW - 9, wallY + wallH * 0.28
       )
       love.graphics.line(
-        x + self.size * 0.38, wallY + wallH * 0.55,
-        x + self.size - 8, wallY + wallH - 8
+        wallX + wallW * 0.38, wallY + wallH * 0.55,
+        wallX + wallW - 8, wallY + wallH - 8
       )
     end
   end
@@ -1864,6 +2010,9 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
         half = wall.under.half,
         fill = wall.under.fill,
         cracked = wall.under.cracked,
+        align = wall.under.align,
+        half2 = wall.under.half2,
+        lean = wall.under.lean,
         depth = "behind",
       }
     end
@@ -2199,15 +2348,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     return true
   end
 
-  local originX = (minCol - 1) * size
-  local originY = (minRow - 1) * size
-  local spanW = (maxCol - minCol + 1) * size
-  local spanH = (maxRow - minRow + 1) * size
-  -- Full clear only when this is the sole pass (no mixed top-down underlay).
-  if filter ~= "side" then
-    love.graphics.setColor(0.025, 0.05, 0.09)
-    love.graphics.rectangle("fill", originX - size, originY - size, spanW + size * 2, spanH + size * 2)
-  end
+  -- Void stays transparent so the menu cave background shows through.
 
   local function cellFloorTop(col, row)
     return Perspective.floorY(col, row, size, "side")
@@ -2349,26 +2490,45 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
   local function drawFrontWallElev(wall, col, row, behind)
     local x, y = self:tileOrigin(col, row)
     local fill = wall.half and (wall.fill or 0.5) or 1
-    local wallH = Perspective.wallHeight(size, fill)
+    local wallMax = Perspective.wallHeight(size, 1)
     local floorTop = cellFloorTop(col, row)
-    local wallY = floorTop - wallH
-    local depth = size * (behind and 0.12 or 0.18)
+    local lean = wall.lean or "left"
+    local wallH
+    local wallY
+    local wallW
     local joinedHalf = behind and wall.half
     local shade = (behind and not joinedHalf) and 0.78 or 1
-    local inset = (behind and not joinedHalf) and math.max(3, size * 0.10) or 0
-    x = x + inset
-    local wallW = size - inset * 2
-    if wallW < 4 then
-      wallW = 4
+    local depth = size * (behind and 0.12 or 0.18)
+
+    if wall.half and wall.half2 then
+      -- Left/right vertical half: full wall height, fill controls width.
+      wallH = wallMax
+      wallY = floorTop - wallH
+      wallW = math.max(4, size * fill)
+      x = lean == "right" and (x + size - wallW) or x
+    else
+      wallH = Perspective.wallHeight(size, fill)
+      if wall.half and wall.align == "up" then
+        wallY = floorTop - wallMax
+      else
+        wallY = floorTop - wallH
+      end
+      local inset = (behind and not joinedHalf) and math.max(3, size * 0.10) or 0
+      x = x + inset
+      wallW = size - inset * 2
+      if wallW < 4 then
+        wallW = 4
+      end
     end
 
+    local polyBottom = wallY + wallH
     love.graphics.setColor(0.32 * shade, 0.20 * shade, 0.14 * shade, 0.95)
     love.graphics.polygon(
       "fill",
       x + wallW, wallY,
       x + wallW + depth, wallY - depth * 0.4,
-      x + wallW + depth, floorTop - depth * 0.4,
-      x + wallW, floorTop
+      x + wallW + depth, polyBottom - depth * 0.4,
+      x + wallW, polyBottom
     )
     love.graphics.setColor(0.80 * shade, 0.62 * shade, 0.46 * shade, 1)
     love.graphics.polygon(
@@ -2378,19 +2538,27 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       x + wallW + depth, wallY - depth * 0.4,
       x + 1 + depth, wallY - depth * 0.4
     )
-    drawWallTexture(sprites.wall, x, wallY, wallW, wallH, size, 0.98 * shade)
+    local image = sprites.wall
+    local texTile = size
+    local align = nil
+    if wall.half and wall.half2 then
+      image = sprites.wallHalf2
+      texTile = wallW
+      align = lean == "right" and "right" or "left"
+    end
+    drawWallTexture(image, x, wallY, wallW, wallH, texTile, 0.98 * shade, align)
 
     if wall.cracked then
       love.graphics.setColor(0.12, 0.07, 0.04, 0.95)
       love.graphics.setLineWidth(2 / zoom)
       love.graphics.line(
         x + 9, wallY + 7,
-        x + size * 0.45, wallY + wallH * 0.5,
+        x + wallW * 0.45, wallY + wallH * 0.5,
         x + 11, wallY + wallH - 7
       )
       love.graphics.line(
-        x + size * 0.45, wallY + wallH * 0.5,
-        x + size - 9 - inset, wallY + wallH * 0.28
+        x + wallW * 0.45, wallY + wallH * 0.5,
+        x + wallW - 9, wallY + wallH * 0.28
       )
     end
   end
@@ -2410,6 +2578,9 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
         half = wall.under.half,
         fill = wall.under.fill,
         cracked = wall.under.cracked,
+        align = wall.under.align,
+        half2 = wall.under.half2,
+        lean = wall.under.lean,
         depth = "behind",
       }
     end
