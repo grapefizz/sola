@@ -389,6 +389,7 @@ function Player:continueSlide(grid)
 end
 
 function Player:update(dt, grid)
+  grid:updatePressurePlates(self.col, self.row, self:sizeRatio())
   if not self.dead and not self.won and self.timeRemaining > 0 then
     self.timeRemaining = math.max(0, self.timeRemaining - dt)
   end
@@ -428,6 +429,7 @@ function Player:update(dt, grid)
         self:stopSlide()
       end
     end
+    grid:updatePressurePlates(self.col, self.row, self:sizeRatio())
     movement.active = false
     if self.slide.active and not self.dead and not self.won and not self:isMelted() then
       self:continueSlide(grid)

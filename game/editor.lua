@@ -29,7 +29,8 @@ local TOOLS = {
   { name = "tea", label = "Iced Tea Goal", icon = "tile" },
   { name = "puzzle_piece", label = "Puzzle Piece", icon = "tile" },
   { name = "puzzle_canvas", label = "Puzzle Canvas", icon = "tile" },
-  { name = "puzzle_door", label = "Puzzle Door", icon = "tile" },
+  { name = "pressure_plate", label = "Pressure Plate", icon = "tile" },
+  { name = "puzzle_door", label = "Door", icon = "tile" },
   { name = "side_wall", label = "Side Wall", icon = "tile" },
   { name = "front_wall", label = "Front Wall", icon = "tile" },
   { name = "half_wall", label = "Half Wall", icon = "tile" },
@@ -205,6 +206,19 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
       2,
       2
     )
+  elseif tool == "pressure_plate" then
+    local plateW = size * 0.72
+    local plateH = size * 0.22
+    withAlpha(0.10, 0.12, 0.15, 0.95, alpha)
+    love.graphics.rectangle("fill", cx - plateW * 0.5, cy - plateH * 0.5, plateW, plateH, 2, 2)
+    withAlpha(0.62, 0.70, 0.76, 0.95, alpha)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", cx - plateW * 0.5, cy - plateH * 0.5, plateW, plateH, 2, 2)
+    withAlpha(0.22, 0.48, 0.62, 0.95, alpha)
+    love.graphics.rectangle("fill", cx - plateW * 0.34, cy - plateH * 0.28, plateW * 0.68, plateH * 0.56, 1, 1)
+    withAlpha(0.82, 0.92, 0.98, 0.8, alpha)
+    love.graphics.setLineWidth(1)
+    love.graphics.line(cx - plateW * 0.22, cy, cx + plateW * 0.22, cy)
   elseif tool == "puzzle_door" then
     withAlpha(0.12, 0.12, 0.14, 0.98, alpha)
     love.graphics.rectangle("fill", x + 3, y + 3, size - 6, size - 6, 2, 2)
@@ -325,6 +339,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:removePuzzlePiece(col, row)
     grid:removePuzzleCanvas(col, row)
     grid:removePuzzleDoor(col, row)
+    grid:removePressurePlate(col, row)
     grid:removeWall(col, row)
     grid:removeBoulder(col, row)
   elseif tool == "fire" then
@@ -339,6 +354,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addPuzzlePiece(col, row)
   elseif tool == "puzzle_canvas" then
     grid:addPuzzleCanvas(col, row)
+  elseif tool == "pressure_plate" then
+    grid:addPressurePlate(col, row)
   elseif tool == "puzzle_door" then
     grid:addPuzzleDoor(col, row)
   elseif tool == "side_wall" then
@@ -841,6 +858,7 @@ function Editor:protectSpawn(grid)
   grid:removePuzzlePiece(self.spawnCol, self.spawnRow)
   grid:removePuzzleCanvas(self.spawnCol, self.spawnRow)
   grid:removePuzzleDoor(self.spawnCol, self.spawnRow)
+  grid:removePressurePlate(self.spawnCol, self.spawnRow)
   grid:removeWall(self.spawnCol, self.spawnRow)
   grid:removeBoulder(self.spawnCol, self.spawnRow)
 end
@@ -1218,6 +1236,10 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "5" then
     self.tool = "tea"
     self.loadDropdownOpen = false
+  elseif key == "k" then
+    self.tool = "pressure_plate"
+    self.loadDropdownOpen = false
+    self:setStatus("Pressure plate · standing on it opens doors")
   elseif key == "j" then
     self.tool = "puzzle_piece"
     self.loadDropdownOpen = false
@@ -1229,7 +1251,7 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "=" then
     self.tool = "puzzle_door"
     self.loadDropdownOpen = false
-    self:setStatus("Puzzle door · blocks until canvas is complete")
+    self:setStatus("Door · opens while a pressure plate is pressed; canvas can also unlock it")
   elseif key == "6" then
     self.tool = "side_wall"
     self.loadDropdownOpen = false
@@ -1568,6 +1590,8 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.18, 0.18, 0.22, 0.95)
       elseif tool.name == "puzzle_canvas" then
         love.graphics.setColor(0.42, 0.36, 0.28, 0.95)
+      elseif tool.name == "pressure_plate" then
+        love.graphics.setColor(0.20, 0.52, 0.58, 0.95)
       elseif tool.name == "puzzle_door" then
         love.graphics.setColor(0.28, 0.28, 0.32, 0.95)
       elseif tool.name == "side_wall" then
