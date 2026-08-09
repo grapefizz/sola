@@ -4,39 +4,86 @@ Player.__index = Player
 local Perspective = require "game.perspective"
 
 local MOVE_DURATION = 0.14
-local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 -- 25% faster on ice
--- Cracked walls break when approaching at least this much faster than a normal step.
+local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 .
 local SMASH_SPEED_FACTOR = 1.05
 local PLAYER_FRAME_SIZE = 128
-local PLAYER_FRAME_COUNT = 18
 local PLAYER_FRAME_DURATION = 1 / 12
 local MELT_TIME = 30
-local playerAnimation
 
-local function getPlayerAnimation()
-  if not playerAnimation then
-    local image = love.graphics.newImage("assets/player-sheet.png")
-    image:setFilter("linear", "linear")
-    local frames = {}
-    for index = 1, PLAYER_FRAME_COUNT do
-      frames[index] = love.graphics.newQuad(
-        (index - 1) * PLAYER_FRAME_SIZE,
-        0,
-        PLAYER_FRAME_SIZE,
-        PLAYER_FRAME_SIZE,
-        image:getDimensions()
-      )
-    end
-    playerAnimation = { image = image, frames = frames }
+local PLAYER_SHEET_PATHS = {
+  idle = "assets/player-sheet.png",
+  down = "assets/player-down.png",
+  up = "assets/player-up.png",
+  side = "assets/player-side.png",
+}
+
+local PLAYER_FRAME_COUNTS = {
+  idle = 18,
+  down = 26,
+  up = 26,
+  side = 25,
+}
+local playerAnimations = {}
+
+local function getPlayerAnimation(key)
+  local cached = playerAnimations[key]
+  if cached then
+    return cached
   end
-  return playerAnimation
+
+  local path = PLAYER_SHEET_PATHS[key] or PLAYER_SHEET_PATHS.idle
+  local image = love.graphics.newImage(path)
+  image:setFilter("linear", "linear")
+  local maxFrames = math.floor(image:getWidth() / PLAYER_FRAME_SIZE)
+  local frameCount = math.min(PLAYER_FRAME_COUNTS[key] or maxFrames, maxFrames)
+  local frames = {}
+  for index = 1, frameCount do
+    frames[index] = love.graphics.newQuad(
+      (index - 1) * PLAYER_FRAME_SIZE,
+      0,
+      PLAYER_FRAME_SIZE,
+      PLAYER_FRAME_SIZE,
+      image:getDimensions()
+    )
+  end
+
+  local animation = { image = image, frames = frames, frameCount = frameCount }
+  playerAnimations[key] = animation
+  return animation
 end
 
-function Player.drawSprite(x, y, size, time, mode)
-  local animation = getPlayerAnimation()
+local function pickPlayerAnimation(mode, facingDx, facingDy, isMoving)
+  if not isMoving then
+    return "idle", false
+  end
+  if mode == "side" then
+    return "side", facingDx < 0
+  end
+  if facingDy < 0 then
+    return "up", false
+  end
+  if facingDy > 0 then
+    return "down", false
+  end
+  if facingDx ~= 0 then
+    return "side", facingDx < 0
+  end
+  return "down", false
+end
+
+function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving)
   time = time or ((love.timer and love.timer.getTime()) or 0)
-  local frameIndex = math.floor(time / PLAYER_FRAME_DURATION) % PLAYER_FRAME_COUNT + 1
   mode = mode or Perspective.mode
+  facingDx = facingDx or 0
+  facingDy = facingDy or 1
+  if isMoving == nil then
+    isMoving = false
+  end
+
+  local key, flip = pickPlayerAnimation(mode, facingDx, facingDy, isMoving)
+  local animation = getPlayerAnimation(key)
+  local frameIndex = math.floor(time / PLAYER_FRAME_DURATION) % animation.frameCount + 1
+  local mirror = flip and -1 or 1
 
   if mode == "side" then
     -- Stand the ice-cube sprite on the floor with a tiny depth cue.
@@ -63,7 +110,7 @@ function Player.drawSprite(x, y, size, time, mode)
       x,
       y,
       0,
-      scale,
+      scale * mirror,
       scale,
       PLAYER_FRAME_SIZE / 2,
       PLAYER_FRAME_SIZE
@@ -79,7 +126,7 @@ function Player.drawSprite(x, y, size, time, mode)
     x,
     y,
     0,
-    scale,
+    scale * mirror,
     scale,
     PLAYER_FRAME_SIZE / 2,
     PLAYER_FRAME_SIZE / 2
@@ -108,10 +155,9 @@ function Player.new(col, row)
     startSize = 42,
     dead = false,
     won = false,
-    heldItem = nil, -- "puzzle_piece" or nil (one at a time)
+    heldItem = nil, 
     facingDx = 0,
     facingDy = -1,
-    -- Last left/right facing used for side-view jumps.
     jumpFacingDx = 1,
     movement = {
       active = false,
@@ -246,7 +292,6 @@ function Player:canJumpLand(grid, col, row)
   return true, col, row, deadly
 end
 
--- Middle tile being vaulted: fire / ground / half-wall / gap OK; full walls & boulders block.
 function Player:canJumpOver(grid, col, row)
   if not grid:isInside(col, row) then
     return false
@@ -298,7 +343,6 @@ function Player:inSideView(grid)
   return Perspective.isSide()
 end
 
--- Space jump: vault one block over; prefer landing one block higher when possible.
 function Player:tryJump(grid)
   if self.dead or self.won or self:isMelted() or self.movement.active then
     return false
@@ -318,7 +362,6 @@ function Player:tryJump(grid)
     return false
   end
 
-  -- Prefer the big hop (two over, one up). Fall back to same-height vault.
   local candidates = {
     { col = self.col + dx * 2, row = self.row - 1, needArc = true },
     { col = self.col + dx * 2, row = self.row, needArc = false },
@@ -327,7 +370,7 @@ function Player:tryJump(grid)
   local landCol, landRow, deadly
   for _, candidate in ipairs(candidates) do
     if candidate.needArc and not self:canJumpOver(grid, overCol, self.row - 1) then
-      -- Ceiling / wall in the arc — skip the high landing.
+    
     else
       local ok, col, row, tileDeadly = self:canJumpLand(grid, candidate.col, candidate.row)
       if ok then
@@ -540,7 +583,10 @@ function Player:draw(grid, camera)
 
   local x, y = camera:worldToScreen(worldX, worldY)
   local screenSize = size * camera.zoom
-  Player.drawSprite(x, y, screenSize, nil, mode)
+
+  local facingDx = (mode == "side") and self.jumpFacingDx or self.facingDx
+  local isMoving = self.movement.active or self.slide.active
+  Player.drawSprite(x, y, screenSize, nil, mode, facingDx, self.facingDy, isMoving)
 
   if self.heldItem == "puzzle_piece" then
     local pieceSize = math.max(10, screenSize * 0.55)
