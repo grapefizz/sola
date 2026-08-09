@@ -294,6 +294,7 @@ function Player.new(col, row, timeLimit)
     startSize = 43.5,
     dead = false,
     won = false,
+    wonViaFinalDoor = false,
     inFridge = false,
     heldItem = nil,
     heldKeyVariant = nil,
@@ -520,7 +521,6 @@ function Player:beginStep(grid, col, row, deadly, jumping)
 
   self.col = col
   self.row = row
-  grid:setPuddleTarget(col, row)
 end
 
 function Player:inSideView(grid)
@@ -620,7 +620,6 @@ function Player:continueSlide(grid)
 end
 
 function Player:update(dt, grid)
-  grid:updatePuddles(dt)
   local puddleState = self.puddleAnimation
   puddleState.active = true
   puddleState.elapsed = (
@@ -648,12 +647,6 @@ function Player:update(dt, grid)
   if movement.active then
     movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
     if movement.elapsed >= movement.duration then
-      grid:addPuddleTrail(
-        movement.fromCol,
-        movement.fromRow,
-        movement.toCol,
-        movement.toRow
-      )
       grid:consumeSnowflake(movement.toCol, movement.toRow)
 
       -- Key halves assemble in-hand; full key opens a key door on contact.
@@ -686,8 +679,13 @@ function Player:update(dt, grid)
       elseif grid:isTeaTile(movement.toCol, movement.toRow) then
         if grid:isTeaUnlocked() then
           self.won = true
+          self.wonViaFinalDoor = false
           self:stopSlide()
         end
+      elseif grid:isFinalDoor(movement.toCol, movement.toRow) then
+        self.won = true
+        self.wonViaFinalDoor = true
+        self:stopSlide()
       end
       grid:updatePressurePlates(self.col, self.row, self:sizeRatio())
       movement.active = false
