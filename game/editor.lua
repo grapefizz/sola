@@ -54,6 +54,7 @@ local HUD_H = 18 + (TOOL_BUTTON_COUNT - 1) * BUTTON_GAP + BUTTON_H + 10
 local hudFont
 local previewSprites
 local toolIconCache = {}
+local wallPreviewQuadCache = {}
 
 local function controlIsDown()
   return love.keyboard.isDown("lctrl", "rctrl")
@@ -87,11 +88,46 @@ local function getPreviewSprites()
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
+    wall = love.graphics.newImage("assets/wall.png"),
   }
   for _, image in pairs(previewSprites) do
     image:setFilter("linear", "linear")
   end
   return previewSprites
+end
+
+local function drawWallPreview(image, x, y, width, height, tileSize, alpha, align)
+  local imageWidth, imageHeight = image:getDimensions()
+  local sourceWidth = imageWidth * math.min(1, width / tileSize)
+  local sourceHeight = imageHeight * math.min(1, height / tileSize)
+  local sourceX
+  if align == "left" then
+    sourceX = 0
+  elseif align == "right" then
+    sourceX = imageWidth - sourceWidth
+  else
+    sourceX = (imageWidth - sourceWidth) * 0.5
+  end
+  local sourceY = imageHeight - sourceHeight
+  local key = table.concat({
+    math.floor(sourceX + 0.5),
+    math.floor(sourceY + 0.5),
+    math.floor(sourceWidth + 0.5),
+    math.floor(sourceHeight + 0.5),
+  }, ":")
+  local quad = wallPreviewQuadCache[key]
+  if not quad then
+    quad = love.graphics.newQuad(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
+    wallPreviewQuadCache[key] = quad
+  end
+  love.graphics.setColor(1, 1, 1, alpha)
+  love.graphics.draw(image, quad, x, y, 0, width / sourceWidth, height / sourceHeight)
+end
+
+local function drawSideWallPreview(image, x, y, width, height, tileSize, alpha, lean)
+  local peek = tileSize * 0.06
+  local drawX = lean == "right" and (x - peek) or x
+  drawWallPreview(image, drawX, y, width + peek, height, tileSize, alpha, lean)
 end
 
 local function getKeyPiecePreview(sprites, section, sideView)
@@ -228,24 +264,11 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     love.graphics.line(cx, y + 6, cx, y + size - 6)
     love.graphics.line(x + 6, cy, x + size - 6, cy)
   elseif tool == "side_wall" then
-    -- Strip only — no brick / ground under it.
     local stripW = size * 0.5
     local stripX = wallFacing == "right" and (x + size - stripW) or x
-    withAlpha(0.32, 0.48, 0.62, 0.95, alpha)
-    love.graphics.rectangle("fill", stripX, y + 1, stripW, size - 2, 2, 2)
-    withAlpha(0.55, 0.72, 0.88, 0.85, alpha)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", stripX, y + 1, stripW, size - 2, 2, 2)
+    drawSideWallPreview(sprites.wall, stripX, y, stripW, size, size, alpha, wallFacing)
   elseif tool == "front_wall" or tool == "cracked_wall" then
-    if tool == "cracked_wall" then
-      withAlpha(0.48, 0.34, 0.26, 0.95, alpha)
-    else
-      withAlpha(0.55, 0.38, 0.28, 0.95, alpha)
-    end
-    love.graphics.rectangle("fill", x + 1, y + 1, size - 2, size - 2, 2, 2)
-    withAlpha(0.78, 0.58, 0.42, 0.9, alpha)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", x + 1, y + 1, size - 2, size - 2, 2, 2)
+    drawWallPreview(sprites.wall, x, y, size, size, size, alpha)
     if tool == "cracked_wall" then
       withAlpha(0.18, 0.10, 0.06, 0.95, alpha)
       love.graphics.setLineWidth(2)
@@ -273,14 +296,10 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     end
   elseif tool == "half_wall" then
     local fill = halfWallFill
-    local wallH = (size - 2) * fill
-    local wallY = y + size - 1 - wallH
+    local wallH = size * fill
+    local wallY = y + size - wallH
     -- Slab only — no brick / ground under or above it.
-    withAlpha(0.55, 0.38, 0.28, 0.95, alpha)
-    love.graphics.rectangle("fill", x + 1, wallY, size - 2, wallH, 2, 2)
-    withAlpha(0.78, 0.58, 0.42, 0.9, alpha)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", x + 1, wallY, size - 2, wallH, 2, 2)
+    drawWallPreview(sprites.wall, x, wallY, size, wallH, size, alpha)
   elseif tool == "boulder" or tool == "boulder2" or tool == "cracked_boulder" then
     local image = sprites.boulder
     if tool == "boulder2" then

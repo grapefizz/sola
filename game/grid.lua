@@ -11,6 +11,7 @@ local tileSprites
 local groundQuadCache = {}
 local iceQuadCache = {}
 local mossQuadCache = {}
+local wallQuadCache = {}
 
 local function getTileSprites()
   if tileSprites then
@@ -33,6 +34,7 @@ local function getTileSprites()
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
+    wall = love.graphics.newImage("assets/wall.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -49,6 +51,7 @@ local function getTileSprites()
   tileSprites.boulder:setFilter("linear", "linear")
   tileSprites.boulder2:setFilter("linear", "linear")
   tileSprites.crackedBoulder:setFilter("linear", "linear")
+  tileSprites.wall:setFilter("linear", "linear")
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -64,6 +67,43 @@ local function getTileSprites()
   tileSprites.moss:setWrap("repeat", "repeat")
   tileSprites.mossSide:setWrap("repeat", "repeat")
   return tileSprites
+end
+
+local function drawWallTexture(image, x, y, width, height, tileSize, alpha, align)
+  local imageWidth, imageHeight = image:getDimensions()
+  local sourceWidth = math.max(1, imageWidth * math.min(1, width / tileSize))
+  local sourceHeight = math.max(1, imageHeight * math.min(1, height / tileSize))
+  local sourceX
+  if align == "left" then
+    sourceX = 0
+  elseif align == "right" then
+    sourceX = imageWidth - sourceWidth
+  else
+    sourceX = (imageWidth - sourceWidth) * 0.5
+  end
+  local sourceY = imageHeight - sourceHeight
+  local key = table.concat({
+    math.floor(sourceX + 0.5),
+    math.floor(sourceY + 0.5),
+    math.floor(sourceWidth + 0.5),
+    math.floor(sourceHeight + 0.5),
+  }, ":")
+  local quad = wallQuadCache[key]
+  if not quad then
+    quad = love.graphics.newQuad(sourceX, sourceY, sourceWidth, sourceHeight, imageWidth, imageHeight)
+    wallQuadCache[key] = quad
+  end
+  love.graphics.setColor(1, 1, 1, alpha or 1)
+  love.graphics.draw(image, quad, x, y, 0, width / sourceWidth, height / sourceHeight)
+end
+
+local function drawSideWallTexture(image, x, y, width, height, tileSize, alpha, lean)
+  -- One continuous crop of wall.png, using the exact same scale and bottom
+  -- alignment as a half wall. The extra width reveals a little more of the
+  -- real brick artwork without adding or repeating any shapes.
+  local peek = tileSize * 0.06
+  local drawX = lean == "right" and (x - peek) or x
+  drawWallTexture(image, drawX, y, width + peek, height, tileSize, alpha, lean)
 end
 
 local function getTextureQuad(image, cache, col, row, length)
@@ -699,9 +739,9 @@ function Grid:addWall(col, row, texture, lean, options)
   local existing = self.wallTiles[key]
   local under = nil
 
-  -- Side wall on top of a behind front wall keeps the behind wall underneath.
+  -- Side walls can share a cell with behind walls and half walls.
   if texture == "side" and existing then
-    if existing.texture == "front" and existing.depth == "behind" then
+    if existing.texture == "front" and (existing.depth == "behind" or existing.half) then
       under = {
         texture = "front",
         depth = "behind",
@@ -714,8 +754,8 @@ function Grid:addWall(col, row, texture, lean, options)
     end
   end
 
-  -- Behind front wall under an existing side wall: stash as under, keep side.
-  if texture == "front" and depth == "behind" and existing and existing.texture == "side" then
+  -- Painting a half wall over a side wall joins both in the same grid cell.
+  if texture == "front" and (depth == "behind" or options.half) and existing and existing.texture == "side" then
     existing.under = {
       texture = "front",
       depth = "behind",
@@ -1099,26 +1139,45 @@ function Grid:serialize()
     lines[row] = table.concat(cells)
   end
 
-  local map = table.concat(lines, "\n")
-  if not next(self.sideViewTiles) then
-    return map
+  local output = table.concat(lines, "\n")
+  if next(self.sideViewTiles) then
+    local sideLines = { output, "@side" }
+    for row = 1, self.rows do
+      local cells = {}
+      for col = 1, self.columns do
+        cells[col] = self:isSideView(col, row) and "#" or "."
+      end
+      sideLines[#sideLines + 1] = table.concat(cells)
+    end
+    output = table.concat(sideLines, "\n")
   end
 
-  local sideLines = { map, "@side" }
-  for row = 1, self.rows do
-    local cells = {}
-    for col = 1, self.columns do
-      cells[col] = self:isSideView(col, row) and "#" or "."
+  local joins = {}
+  for _, wall in pairs(self.wallTiles) do
+    if wall.texture == "side" and wall.under and wall.under.half then
+      joins[#joins + 1] = table.concat({
+        wall.col,
+        wall.row,
+        wall.under.fill or 0.5,
+        wall.under.cracked and 1 or 0,
+      }, ",")
     end
-    sideLines[#sideLines + 1] = table.concat(cells)
   end
-  return table.concat(sideLines, "\n")
+  table.sort(joins)
+  if #joins > 0 then
+    output = output .. "\n@walljoins\n" .. table.concat(joins, "\n")
+  end
+  return output
 end
 
 
 
 function Grid:load(serialized)
   self:clear()
+  local basePart, wallJoinsPart = serialized:match("^(.-)\r?\n@walljoins\r?\n(.*)$")
+  if basePart then
+    serialized = basePart
+  end
   local mapPart, sidePart = serialized:match("^(.-)\r?\n@side\r?\n(.*)$")
   if not mapPart then
     mapPart = serialized
@@ -1252,6 +1311,25 @@ function Grid:load(serialized)
         end
       end
       row = row + 1
+    end
+  end
+
+  if wallJoinsPart then
+    for line in wallJoinsPart:gmatch("[^\r\n]+") do
+      local col, row, fill, cracked = line:match("^(%d+),(%d+),([%d%.]+),([01])$")
+      col, row, fill = tonumber(col), tonumber(row), tonumber(fill)
+      if col and row and fill then
+        local wall = self.wallTiles[self:key(col, row)]
+        if wall and wall.texture == "side" then
+          wall.under = {
+            texture = "front",
+            depth = "behind",
+            cracked = cracked == "1",
+            half = true,
+            fill = math.max(0.1, math.min(0.9, fill)),
+          }
+        end
+      end
     end
   end
 end
@@ -1659,22 +1737,14 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     local wallH
     local wallY
     if wall.half then
-      wallH = (self.size - 2) * fill
-      wallY = y + self.size - 1 - wallH
+      wallH = self.size * fill
+      wallY = y + self.size - wallH
     else
       wallH = self.size - 2
       wallY = y + 1
     end
 
-    if wall.cracked then
-      love.graphics.setColor(0.48, 0.34, 0.26, 0.95)
-    else
-      love.graphics.setColor(0.55, 0.38, 0.28, 0.95)
-    end
-    love.graphics.rectangle("fill", x + 1, wallY, self.size - 2, wallH, 2, 2)
-    love.graphics.setColor(0.78, 0.58, 0.42, 0.9)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.rectangle("line", x + 1, wallY, self.size - 2, wallH, 2, 2)
+    drawWallTexture(sprites.wall, x, wallY, self.size, wallH, self.size, 0.98)
 
     if wall.cracked then
       love.graphics.setColor(0.18, 0.10, 0.06, 0.95)
@@ -1939,15 +2009,16 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
         stripX = lean == "right" and (x + self.size - stripW) or x
       end
 
-      if wall.cracked then
-        love.graphics.setColor(0.26, 0.40, 0.52, 0.95)
-      else
-        love.graphics.setColor(0.32, 0.48, 0.62, 0.95)
-      end
-      love.graphics.rectangle("fill", stripX, y + 1, stripW, self.size - 2, 2, 2)
-      love.graphics.setColor(0.55, 0.72, 0.88, 0.85)
-      love.graphics.setLineWidth(1 / zoom)
-      love.graphics.rectangle("line", stripX, y + 1, stripW, self.size - 2, 2, 2)
+      drawSideWallTexture(
+        sprites.wall,
+        stripX,
+        y,
+        stripW,
+        self.size,
+        self.size,
+        0.98,
+        wall.lean or self:getWallLean(wall.col, wall.row)
+      )
 
       if creased then
         local creaseX = stripX + stripW
@@ -2198,10 +2269,11 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     local floorTop = cellFloorTop(col, row)
     local wallY = floorTop - wallH
     local depth = size * (behind and 0.12 or 0.18)
-    local shade = behind and 0.78 or 1
-    local inset = behind and math.max(3, size * 0.10) or 0
+    local joinedHalf = behind and wall.half
+    local shade = (behind and not joinedHalf) and 0.78 or 1
+    local inset = (behind and not joinedHalf) and math.max(3, size * 0.10) or 0
     x = x + inset
-    local wallW = size - 2 - inset * 2
+    local wallW = size - inset * 2
     if wallW < 4 then
       wallW = 4
     end
@@ -2222,15 +2294,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       x + wallW + depth, wallY - depth * 0.4,
       x + 1 + depth, wallY - depth * 0.4
     )
-    if wall.cracked then
-      love.graphics.setColor(0.52 * shade, 0.36 * shade, 0.28 * shade, 1)
-    else
-      love.graphics.setColor(0.62 * shade, 0.44 * shade, 0.33 * shade, 1)
-    end
-    love.graphics.rectangle("fill", x + 1, wallY, wallW, wallH, 2, 2)
-    love.graphics.setColor(0.90 * shade, 0.74 * shade, 0.56 * shade, 0.9)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.rectangle("line", x + 1, wallY, wallW, wallH, 2, 2)
+    drawWallTexture(sprites.wall, x, wallY, wallW, wallH, size, 0.98 * shade)
 
     if wall.cracked then
       love.graphics.setColor(0.12, 0.07, 0.04, 0.95)
@@ -2276,26 +2340,17 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     local wallY = floorTop - wallMax
     local w = size * 0.22
     local sx = lean == "right" and (x + size - w - 1) or (x + 1)
+    local drawY = wallY
+    local drawH = wallMax
 
-    if wall.cracked then
-      love.graphics.setColor(0.28, 0.40, 0.52, 1)
-    else
-      love.graphics.setColor(0.36, 0.50, 0.64, 1)
-    end
-    love.graphics.rectangle("fill", sx, wallY, w, wallMax, 2, 2)
-    love.graphics.setColor(0.58, 0.72, 0.88, 1)
-    love.graphics.rectangle("fill", sx, wallY, w, 4)
+    drawSideWallTexture(sprites.wall, sx, drawY, w, drawH, size, 0.98, lean)
     love.graphics.setColor(0.12, 0.18, 0.26, 0.4)
-    love.graphics.rectangle("fill", sx + w - 3, wallY, 3, wallMax)
-    love.graphics.setColor(0.70, 0.84, 0.96, 0.85)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.rectangle("line", sx, wallY, w, wallMax, 2, 2)
-
+    love.graphics.rectangle("fill", sx + w - 3, drawY, 3, drawH)
     if wall.cracked then
       love.graphics.setColor(0.06, 0.10, 0.14, 0.95)
       love.graphics.setLineWidth(2 / zoom)
       local mid = sx + w * 0.5
-      love.graphics.line(mid, wallY + 6, mid + 1, wallY + wallMax * 0.55, mid - 1, floorTop - 5)
+      love.graphics.line(mid, drawY + 6, mid + 1, drawY + drawH * 0.55, mid - 1, drawY + drawH - 5)
     end
   end
 
