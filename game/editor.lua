@@ -24,6 +24,9 @@ local LEGEND_H = 132
 -- Single source of truth: add a tile tool here (+ applyTool / grid draw)
 -- and its left-panel icon is snapshotted automatically.
 local TOOLS = {
+  { name = "save", label = "Save", icon = "save" },
+  { name = "load", label = "Load", icon = "load" },
+  { name = "time_limit", label = "Time Limit", icon = "time_limit" },
   { name = "ground", label = "Ground", icon = "tile" },
   { name = "moss", label = "Moss Block", icon = "tile" },
   { name = "fire", label = "Campfire", icon = "tile" },
@@ -43,13 +46,12 @@ local TOOLS = {
   { name = "cracked_boulder", label = "Cracked Boulder", icon = "tile" },
   { name = "erase", label = "Erase", icon = "erase" },
   { name = "perspective", label = "Side Zone", icon = "perspective" },
-  { name = "save", label = "Save", icon = "save" },
-  { name = "load", label = "Load", icon = "load" },
-  { name = "time_limit", label = "Time Limit", icon = "time_limit" },
 }
 
 local TOOL_BUTTON_COUNT = #TOOLS
-local HUD_H = 18 + (TOOL_BUTTON_COUNT - 1) * BUTTON_GAP + BUTTON_H + 10
+local ACTION_TOOL_COUNT = 3
+local ACTION_GROUP_GAP = 12
+local HUD_H = 18 + (TOOL_BUTTON_COUNT - 1) * BUTTON_GAP + BUTTON_H + ACTION_GROUP_GAP + 10
 
 local hudFont
 local previewSprites
@@ -726,7 +728,8 @@ function Editor:confirmTime()
 end
 
 local function buttonY(index)
-  return 18 + (index - 1) * BUTTON_GAP
+  local groupGap = index > ACTION_TOOL_COUNT and ACTION_GROUP_GAP or 0
+  return 18 + (index - 1) * BUTTON_GAP + groupGap
 end
 
 local function nextDefaultName(existing)
@@ -847,7 +850,7 @@ function Editor:getDropdownRect()
   end
 
   local x = HUD_X + HUD_W + 6
-  local y = buttonY(TOOL_BUTTON_COUNT)
+  local y = buttonY(2)
   local w = 168
   local h = 8 + slots * DROPDOWN_ITEM_H
 

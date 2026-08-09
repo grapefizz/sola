@@ -3,12 +3,12 @@ Player.__index = Player
 
 local Perspective = require "game.perspective"
 
-local MOVE_DURATION = 0.30
+local MOVE_DURATION = 0.15
 local ICE_MOVE_DURATION = MOVE_DURATION / 1.25
 local SMASH_SPEED_FACTOR = 1.05
 local PLAYER_FRAME_SIZE = 128
-local PLAYER_FRAME_DURATION = 1 / 12
-local PLAYER_MOVE_ANIMATION_DURATION = 0.65
+local PLAYER_FRAME_DURATION = 1 / 24
+local PLAYER_MOVE_ANIMATION_DURATION = 0.325
 local MELT_TIME = 40
 
 local PLAYER_SHEET_PATHS = {
