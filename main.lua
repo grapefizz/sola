@@ -1000,8 +1000,6 @@ local function levelsGridMetrics(width, height)
   return gridX, gridY, gridW, gridH
 end
 
-<<<<<<< HEAD
-=======
 local function perspectiveButtonRect(width, height)
   local bw, bh = 148, 34
   local x = width - bw - 18
@@ -1058,8 +1056,6 @@ local function drawPerspectiveButton(width, height, alpha)
   setUiColor("text", alpha)
   love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
 end
-
->>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
 local function levelCardRect(index, width, height)
   local localIndex = index - levelScroll * CARD_COLS
   if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
@@ -1294,12 +1290,6 @@ local function drawAtmosphere(width, height)
   setUiColor("shadow", 0.26)
   love.graphics.rectangle("fill", 0, 0, width, height)
 
-  -- ice glow behind cube
-  setUiColor("accent", 0.08 * glowPulse)
-  love.graphics.circle("fill", width * 0.24, height * 0.38, height * 0.32)
-  setUiColor("accentBright", 0.05 * glowPulse)
-  love.graphics.circle("fill", width * 0.24, height * 0.38, height * 0.16)
-
   setUiColor("shadow", 0.62)
   love.graphics.rectangle("fill", 0, 0, width, 56)
   setUiColor("shadow", 0.72)
@@ -1312,16 +1302,6 @@ local function drawMenuCube(width, height)
   local slideX = (1 - e) * -40
   local fade = e
   local bob = bobAmount
-  local midX = cx + size * 0.50 + slideX
-  local midY = cy + bob + size * 0.92
-
-  -- soft pool shadow
-  love.graphics.setBlendMode("alpha")
-  love.graphics.setColor(0, 0, 0, 0.28 * fade)
-  love.graphics.ellipse("fill", midX, midY + 6, size * 0.20, size * 0.04)
-  setUiColor("accent", 0.16 * fade * glowPulse)
-  love.graphics.ellipse("fill", midX, midY, size * 0.15, size * 0.03)
-
   local imageW, imageH = menuCharacter:getDimensions()
   local scale = math.min(size / imageW, size / imageH)
   local drawW = imageW * scale
@@ -1453,14 +1433,15 @@ end
 
 local function drawMenu(width, height)
   drawAtmosphere(width, height)
+  drawSnow()
   drawMenuCube(width, height)
   drawMenuTitle(width, height)
   drawMenuItems(width, height)
-  drawSnow() -- overlay so flakes cover the full screen, not just left of the panel
 end
 
 local function drawLevels(width, height)
   drawAtmosphere(width, height)
+  drawSnow()
   local e = easeOutCubic(intro)
 
   -- floating title only (no big menu panel)
@@ -1592,20 +1573,16 @@ local function drawLevels(width, height)
   end
 
   love.graphics.setFont(fonts.small)
-<<<<<<< HEAD
-  love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
-  local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
-=======
   setUiColor("textMuted", 0.9 * e)
   local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
->>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
-  drawSnow()
+  drawPerspectiveButton(width, height, e)
 end
 
 local function drawCredits(width, height)
   drawAtmosphere(width, height)
+  drawSnow()
   local e = easeOutCubic(intro)
 
   local pw, ph = 360, 280
@@ -1651,7 +1628,6 @@ local function drawCredits(width, height)
     y = y + 20
   end
 
-  drawSnow()
 end
 
 local function drawToggle(x, y, on, alpha)
@@ -1714,6 +1690,7 @@ end
 
 local function drawSettings(width, height)
   drawAtmosphere(width, height)
+  drawSnow()
   local e = easeOutCubic(intro)
   local px, py, pw, ph, rowH = settingsPanelRect(width, height)
   py = py + math.floor((1 - e) * 12)
@@ -1765,7 +1742,6 @@ local function drawSettings(width, height)
   local tip = "Esc to return"
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), py + ph - 28)
 
-  drawSnow()
 end
 
 function love.draw()

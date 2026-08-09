@@ -206,22 +206,8 @@ function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving,
   local mirror = flip and -1 or 1
 
   if mode == "side" then
-    -- Stand the ice-cube sprite on the floor with a tiny depth cue.
+    -- Stand the ice-cube sprite directly on the floor.
     local body = size
-    local depth = size * 0.16
-    local right = x + body * 0.42
-    local top = y - body
-    local bottom = y
-
-    love.graphics.setColor(0.42, 0.70, 0.90, 0.55)
-    love.graphics.polygon(
-      "fill",
-      right, top + 4,
-      right + depth, top - depth * 0.35,
-      right + depth, bottom - depth * 0.35,
-      right, bottom - 2
-    )
-
     local scale = body / PLAYER_FRAME_SIZE
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(
@@ -825,7 +811,6 @@ function Player:drawHud(grid)
       line = line .. "  ·  Holding key"
     end
     love.graphics.print(line, 18, 38)
-<<<<<<< HEAD
     if grid and grid:hasKeyDoor() and not grid:isTeaUnlocked() then
       love.graphics.setColor(0.75, 0.72, 0.55)
       if self.heldItem == "key" then
@@ -838,17 +823,8 @@ function Player:drawHud(grid)
     elseif grid and grid:isTeaTile(self.col, self.row) and not grid:isTeaUnlocked() then
       love.graphics.setColor(0.85, 0.65, 0.45)
       love.graphics.print("Open all key doors to unlock the iced tea.", 18, 58)
-    end  else
-=======
-    if grid and grid:hasPuzzleCanvas() and not grid:isTeaUnlocked() then
-      love.graphics.setColor(0.72, 0.67, 0.80)
-      love.graphics.print("Find puzzle pieces and place them on the canvas.", 18, 58)
-    elseif grid and grid:isTeaTile(self.col, self.row) and not grid:isTeaUnlocked() then
-      love.graphics.setColor(0.82, 0.56, 0.68)
-      love.graphics.print("Complete the puzzle to unlock the iced tea.", 18, 58)
     end
   else
->>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
     love.graphics.print("The ice cube has melted!", 18, 38)
   end
 end
