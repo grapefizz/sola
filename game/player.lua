@@ -806,9 +806,9 @@ function Player:draw(grid, camera)
   end
 end
 function Player:drawHud(grid)
-  love.graphics.setColor(0.92, 0.97, 1)
+  love.graphics.setColor(0.95, 0.93, 0.98)
   love.graphics.print("Ice Cube", 18, 14)
-  love.graphics.setColor(0.58, 0.75, 0.9)
+  love.graphics.setColor(0.58, 0.75, 0.92)
   if self.won then
     love.graphics.print("Iced tea reached! Level complete.", 18, 38)
   elseif self.dead then
@@ -825,6 +825,7 @@ function Player:drawHud(grid)
       line = line .. "  ·  Holding key"
     end
     love.graphics.print(line, 18, 38)
+<<<<<<< HEAD
     if grid and grid:hasKeyDoor() and not grid:isTeaUnlocked() then
       love.graphics.setColor(0.75, 0.72, 0.55)
       if self.heldItem == "key" then
@@ -838,6 +839,16 @@ function Player:drawHud(grid)
       love.graphics.setColor(0.85, 0.65, 0.45)
       love.graphics.print("Open all key doors to unlock the iced tea.", 18, 58)
     end  else
+=======
+    if grid and grid:hasPuzzleCanvas() and not grid:isTeaUnlocked() then
+      love.graphics.setColor(0.72, 0.67, 0.80)
+      love.graphics.print("Find puzzle pieces and place them on the canvas.", 18, 58)
+    elseif grid and grid:isTeaTile(self.col, self.row) and not grid:isTeaUnlocked() then
+      love.graphics.setColor(0.82, 0.56, 0.68)
+      love.graphics.print("Complete the puzzle to unlock the iced tea.", 18, 58)
+    end
+  else
+>>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
     love.graphics.print("The ice cube has melted!", 18, 38)
   end
 end
