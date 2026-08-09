@@ -21,11 +21,15 @@ local function getTileSprites()
     ice = love.graphics.newImage("assets/ice.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
     fire = love.graphics.newImage("assets/fire-sheet.png"),
+    keyTop = love.graphics.newImage("assets/key-top.png"),
+    keyDown = love.graphics.newImage("assets/key-down.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
   tileSprites.snowflake:setFilter("linear", "linear")
   tileSprites.fire:setFilter("linear", "linear")
+  tileSprites.keyTop:setFilter("linear", "linear")
+  tileSprites.keyDown:setFilter("linear", "linear")
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -73,9 +77,8 @@ function Grid.new(size, columns, rows, fillGround)
     iceTiles = {},
     snowflakeTiles = {},
     teaTiles = {},
-    puzzlePieceTiles = {},
-    puzzleCanvasTiles = {},
-    puzzleDoorTiles = {},
+    puzzlePieceTiles = {}, -- key halves on the ground
+    puzzleDoorTiles = {}, -- key doors (opened with a full key)
     pressureDoorTiles = {},
     pressurePlateTiles = {},
     pressureDoorOpen = false,
@@ -159,7 +162,6 @@ function Grid:occupiedBounds(padding)
   consider(self.snowflakeTiles)
   consider(self.teaTiles)
   consider(self.puzzlePieceTiles)
-  consider(self.puzzleCanvasTiles)
   consider(self.puzzleDoorTiles)
   consider(self.pressureDoorTiles)
   consider(self.pressurePlateTiles)
@@ -214,7 +216,6 @@ function Grid:erase(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -233,7 +234,6 @@ function Grid:clear()
   self.snowflakeTiles = {}
   self.teaTiles = {}
   self.puzzlePieceTiles = {}
-  self.puzzleCanvasTiles = {}
   self.puzzleDoorTiles = {}
   self.pressureDoorTiles = {}
   self.pressurePlateTiles = {}
@@ -280,7 +280,6 @@ function Grid:addWater(col, row)
     and not self:isInFireZone(col, row)
     and not self:isIceTile(col, row)
     and not self:isTeaTile(col, row)
-    and not self:isPuzzleCanvas(col, row)
     and not self:isBlocking(col, row)
   then
     self.waterTiles[self:key(col, row)] = { col = col, row = row }
@@ -306,7 +305,6 @@ function Grid:addFire(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -337,7 +335,6 @@ function Grid:addIce(col, row)
   self.waterTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
@@ -376,7 +373,6 @@ function Grid:addSnowflake(col, row)
   self.iceTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -417,7 +413,6 @@ function Grid:addTea(col, row)
   self.iceTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -434,25 +429,28 @@ function Grid:isTeaTile(col, row)
   return self.teaTiles[self:key(col, row)] ~= nil
 end
 
-function Grid:addPuzzlePiece(col, row)
+-- Key half on the ground (serialized as J/q = top, M/m = down).
+function Grid:addPuzzlePiece(col, row, variant)
   if not self:isInside(col, row) then
     return
   end
   if self:isInFireZone(col, row) then
     return
   end
+  if variant ~= "down" then
+    variant = "top"
+  end
   self:setGround(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
-  self.puzzlePieceTiles[key] = { col = col, row = row }
+  self.puzzlePieceTiles[key] = { col = col, row = row, variant = variant }
 end
 
 function Grid:removePuzzlePiece(col, row)
@@ -461,9 +459,10 @@ end
 
 function Grid:consumePuzzlePiece(col, row)
   local key = self:key(col, row)
-  if self.puzzlePieceTiles[key] then
+  local piece = self.puzzlePieceTiles[key]
+  if piece then
     self.puzzlePieceTiles[key] = nil
-    return true
+    return true, piece.variant or "top"
   end
   return false
 end
@@ -472,92 +471,29 @@ function Grid:isPuzzlePiece(col, row)
   return self.puzzlePieceTiles[self:key(col, row)] ~= nil
 end
 
-function Grid:addPuzzleCanvas(col, row)
-  if not self:isInside(col, row) then
-    return
-  end
-  self:setGround(col, row)
-  local key = self:key(col, row)
-  self.waterTiles[key] = nil
-  self.fireTiles[key] = nil
-  self.iceTiles[key] = nil
-  self.snowflakeTiles[key] = nil
-  self.teaTiles[key] = nil
-  self.puzzlePieceTiles[key] = nil
-  self.puzzleDoorTiles[key] = nil
-  self.pressureDoorTiles[key] = nil
-  self.pressurePlateTiles[key] = nil
-  self.wallTiles[key] = nil
-  self.boulderTiles[key] = nil
-  self.puzzleCanvasTiles[key] = {
-    col = col,
-    row = row,
-    slots = { false, false },
-  }
+function Grid:getKeyVariant(col, row)
+  local piece = self.puzzlePieceTiles[self:key(col, row)]
+  return piece and (piece.variant or "top") or nil
 end
 
+-- Compatibility shims: canvas tool removed; old levels ignore "A" cells.
 function Grid:removePuzzleCanvas(col, row)
-  self.puzzleCanvasTiles[self:key(col, row)] = nil
 end
 
 function Grid:isPuzzleCanvas(col, row)
-  return self.puzzleCanvasTiles[self:key(col, row)] ~= nil
-end
-
-function Grid:canvasFilledCount(col, row)
-  local canvas = self.puzzleCanvasTiles[self:key(col, row)]
-  if not canvas then
-    return 0
-  end
-  local count = 0
-  for i = 1, #canvas.slots do
-    if canvas.slots[i] then
-      count = count + 1
-    end
-  end
-  return count
-end
-
-function Grid:hasPuzzleCanvas()
-  return next(self.puzzleCanvasTiles) ~= nil
-end
-
-function Grid:areAllCanvasesComplete()
-  if not self:hasPuzzleCanvas() then
-    return true
-  end
-  for _, canvas in pairs(self.puzzleCanvasTiles) do
-    for i = 1, #canvas.slots do
-      if not canvas.slots[i] then
-        return false
-      end
-    end
-  end
-  return true
-end
-
-function Grid:isTeaUnlocked()
-  return self:areAllCanvasesComplete()
-end
-
--- Place one held piece into the first empty canvas slot. Returns true if deposited.
-function Grid:tryDepositPuzzlePiece(col, row)
-  local canvas = self.puzzleCanvasTiles[self:key(col, row)]
-  if not canvas then
-    return false
-  end
-  for i = 1, #canvas.slots do
-    if not canvas.slots[i] then
-      canvas.slots[i] = true
-      if self:areAllCanvasesComplete() then
-        self:openPuzzleDoors()
-      end
-      return true
-    end
-  end
   return false
 end
 
+function Grid:hasKeyDoor()
+  return next(self.puzzleDoorTiles) ~= nil
+end
+
+-- Tea locks only while key doors remain. Levels with no key doors stay unlocked.
+function Grid:isTeaUnlocked()
+  return not self:hasKeyDoor()
+end
+
+-- Key door (serialized as L). Opens when walked into while holding a full key.
 function Grid:addPuzzleDoor(col, row)
   if not self:isInside(col, row) then
     return
@@ -570,7 +506,6 @@ function Grid:addPuzzleDoor(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -584,6 +519,15 @@ end
 
 function Grid:isPuzzleDoor(col, row)
   return self.puzzleDoorTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:openPuzzleDoor(col, row)
+  local key = self:key(col, row)
+  if self.puzzleDoorTiles[key] then
+    self.puzzleDoorTiles[key] = nil
+    return true
+  end
+  return false
 end
 
 function Grid:openPuzzleDoors()
@@ -601,7 +545,6 @@ function Grid:addPressureDoor(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
@@ -629,7 +572,6 @@ function Grid:addPressurePlate(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
@@ -684,7 +626,6 @@ function Grid:addWall(col, row, texture, lean, options)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -844,7 +785,6 @@ function Grid:addBoulder(col, row, options)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
-  self.puzzleCanvasTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
@@ -884,7 +824,7 @@ function Grid:isBlocking(col, row, sizeRatio)
   if self:isBoulderTile(col, row) then
     return true
   end
-  if self:isPuzzleDoor(col, row) and not self:areAllCanvasesComplete() then
+  if self:isPuzzleDoor(col, row) then
     return true
   end
   if self:isPressureDoor(col, row) and not self:isPressureDoorOpen() then
@@ -1032,13 +972,11 @@ function Grid:serialize()
       elseif self:isPressurePlate(col, row) and self:isIceTile(col, row) then
         cells[col] = "r"
       elseif self:isPuzzlePiece(col, row) and self:isIceTile(col, row) then
-        cells[col] = "q"
+        cells[col] = (self:getKeyVariant(col, row) == "down") and "m" or "q"
       elseif self:isPressurePlate(col, row) then
         cells[col] = "K"
-      elseif self:isPuzzleCanvas(col, row) then
-        cells[col] = "A"
       elseif self:isPuzzlePiece(col, row) then
-        cells[col] = "J"
+        cells[col] = (self:getKeyVariant(col, row) == "down") and "M" or "J"
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
         cells[col] = boulder.cracked and "Q" or "O"
@@ -1139,9 +1077,12 @@ function Grid:load(serialized)
       elseif cell == "T" then
         self:addTea(col, row)
       elseif cell == "J" then
-        self:addPuzzlePiece(col, row)
+        self:addPuzzlePiece(col, row, "top")
+      elseif cell == "M" then
+        self:addPuzzlePiece(col, row, "down")
       elseif cell == "A" then
-        self:addPuzzleCanvas(col, row)
+        -- Legacy puzzle canvas: keep ground only.
+        self:setGround(col, row)
       elseif cell == "L" then
         self:addPuzzleDoor(col, row)
       elseif cell == "K" then
@@ -1153,7 +1094,10 @@ function Grid:load(serialized)
         self:addPressurePlate(col, row)
       elseif cell == "q" then
         self:addIce(col, row)
-        self:addPuzzlePiece(col, row)
+        self:addPuzzlePiece(col, row, "top")
+      elseif cell == "m" then
+        self:addIce(col, row)
+        self:addPuzzlePiece(col, row, "down")
       elseif cell == "B" then
         self:addBoulder(col, row)
       elseif cell == "P" then
@@ -1271,90 +1215,180 @@ local function drawTeaCup(centerX, centerY, zoom, side)
   love.graphics.line(centerX + 4, centerY - 8, centerX + 10, centerY - 20)
 end
 
--- Black puzzle piece silhouette (knob on top, notch on right).
-local function drawPuzzlePieceShape(centerX, centerY, size, zoom, alpha)
-  alpha = alpha or 1
-  local s = size * 0.42
-  local x, y = centerX, centerY
-  love.graphics.setColor(0.08, 0.08, 0.10, 0.98 * alpha)
-  love.graphics.polygon(
-    "fill",
-    x - s, y - s * 0.55,
-    x - s * 0.22, y - s * 0.55,
-    x - s * 0.22, y - s,
-    x + s * 0.22, y - s,
-    x + s * 0.22, y - s * 0.55,
-    x + s, y - s * 0.55,
-    x + s, y + s * 0.15,
-    x + s * 0.55, y + s * 0.15,
-    x + s * 0.55, y + s * 0.55,
-    x + s, y + s * 0.55,
-    x + s, y + s,
-    x - s, y + s
-  )
-  love.graphics.setColor(0.28, 0.28, 0.32, 0.9 * alpha)
-  love.graphics.setLineWidth(1.2 / zoom)
-  love.graphics.polygon(
-    "line",
-    x - s, y - s * 0.55,
-    x - s * 0.22, y - s * 0.55,
-    x - s * 0.22, y - s,
-    x + s * 0.22, y - s,
-    x + s * 0.22, y - s * 0.55,
-    x + s, y - s * 0.55,
-    x + s, y + s * 0.15,
-    x + s * 0.55, y + s * 0.15,
-    x + s * 0.55, y + s * 0.55,
-    x + s, y + s * 0.55,
-    x + s, y + s,
-    x - s, y + s
-  )
+-- One key split into sections: "top" = bow half, "down" = bit half, full = whole.
+-- top-down uses key-top.png (left/right); side view uses key-down.png (up/down).
+local keySectionQuadCache = {}
+
+local function getKeySectionQuad(image, section, sideView)
+  local cacheKey = (sideView and "s:" or "t:") .. section
+  if keySectionQuadCache[cacheKey] then
+    return keySectionQuadCache[cacheKey]
+  end
+  local iw, ih = image:getDimensions()
+  local quad
+  if sideView then
+    local split = math.floor(ih * 0.48)
+    if section == "down" then
+      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
+    else
+      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
+    end
+  else
+    local split = math.floor(iw * 0.48)
+    if section == "down" then
+      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
+    else
+      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
+    end
+  end
+  keySectionQuadCache[cacheKey] = quad
+  return quad
 end
 
-local function drawPuzzleCanvasAt(centerX, centerY, size, zoom, slots, side)
-  if side then
-    centerY = centerY - size * 0.38
+local function drawKeySprite(centerX, centerY, size, section, full, alpha, sideView)
+  alpha = alpha or 1
+  if section ~= "down" then
+    section = "top"
   end
-  local frame = size * 0.78
-  local x = centerX - frame * 0.5
-  local y = centerY - frame * 0.5
-  love.graphics.setColor(0.18, 0.16, 0.14, 0.95)
-  love.graphics.rectangle("fill", x, y, frame, frame, 3, 3)
-  love.graphics.setColor(0.55, 0.48, 0.38, 0.95)
-  love.graphics.setLineWidth(2 / zoom)
-  love.graphics.rectangle("line", x, y, frame, frame, 3, 3)
+  local sprites = getTileSprites()
+  local image = sideView and sprites.keyDown or sprites.keyTop
+  local iw, ih = image:getDimensions()
+  love.graphics.setColor(1, 1, 1, alpha)
 
-  local slotW = frame * 0.36
-  local slotH = frame * 0.58
-  local gap = frame * 0.08
-  local slotY = y + (frame - slotH) * 0.5
-  local slotX1 = x + gap
-  local slotX2 = x + frame - gap - slotW
+  if full then
+    local target = size * 0.82
+    local scale = target / math.max(iw, ih)
+    local ox, oy = iw * 0.5, sideView and ih or (ih * 0.5)
+    love.graphics.draw(image, centerX, centerY, 0, scale, scale, ox, oy)
+    return
+  end
 
-  for index, slotX in ipairs({ slotX1, slotX2 }) do
-    local filled = slots and slots[index]
-    if filled then
-      drawPuzzlePieceShape(slotX + slotW * 0.5, slotY + slotH * 0.5, size * 0.72, zoom, 1)
-    else
-      love.graphics.setColor(0.10, 0.10, 0.12, 0.55)
-      love.graphics.rectangle("fill", slotX, slotY, slotW, slotH, 2, 2)
-      love.graphics.setColor(0.40, 0.36, 0.30, 0.7)
-      love.graphics.setLineWidth(1 / zoom)
-      love.graphics.rectangle("line", slotX, slotY, slotW, slotH, 2, 2)
+  local quad = getKeySectionQuad(image, section, sideView)
+  local _, _, qw, qh = quad:getViewport()
+  local target = size * 0.72
+  local scale = target / math.max(qw, qh)
+  local ox, oy = qw * 0.5, qh * 0.5
+  if sideView then
+    -- Sit the fragment on the floor line.
+    oy = qh
+  end
+  love.graphics.draw(image, quad, centerX, centerY, 0, scale, scale, ox, oy)
+end
+
+-- Side-view doors share front-wall elevation size (wall height above floor face).
+local function drawDoorElevAt(x, floorTop, size, zoom, open, palette)
+  local wallH = Perspective.wallHeight(size, 1)
+  local wallY = floorTop - wallH
+  local depth = size * 0.18
+  local wallW = size - 2
+  local shade = open and 0.72 or 1
+
+  -- Same extruded block silhouette as front walls.
+  love.graphics.setColor(
+    palette.side[1] * shade,
+    palette.side[2] * shade,
+    palette.side[3] * shade,
+    0.95
+  )
+  love.graphics.polygon(
+    "fill",
+    x + wallW, wallY,
+    x + wallW + depth, wallY - depth * 0.4,
+    x + wallW + depth, floorTop - depth * 0.4,
+    x + wallW, floorTop
+  )
+  love.graphics.setColor(
+    palette.top[1] * shade,
+    palette.top[2] * shade,
+    palette.top[3] * shade,
+    1
+  )
+  love.graphics.polygon(
+    "fill",
+    x + 1, wallY,
+    x + wallW, wallY,
+    x + wallW + depth, wallY - depth * 0.4,
+    x + 1 + depth, wallY - depth * 0.4
+  )
+
+  if open then
+    -- Open: wall-sized frame with hollow center (doorway).
+    local frame = math.max(3, size * 0.08)
+    love.graphics.setColor(palette.face[1] * 0.55, palette.face[2] * 0.55, palette.face[3] * 0.55, 0.96)
+    love.graphics.rectangle("fill", x + 1, wallY, wallW, wallH, 2, 2)
+    love.graphics.setColor(0.025, 0.05, 0.08, 0.98)
+    love.graphics.rectangle(
+      "fill",
+      x + 1 + frame,
+      wallY + frame,
+      wallW - frame * 2,
+      wallH - frame * 2,
+      1,
+      1
+    )
+    love.graphics.setColor(palette.line[1], palette.line[2], palette.line[3], 0.9)
+    love.graphics.setLineWidth(1.5 / zoom)
+    love.graphics.rectangle("line", x + 1, wallY, wallW, wallH, 2, 2)
+    love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.75)
+    love.graphics.setLineWidth(1 / zoom)
+    love.graphics.line(x + 1 + frame, wallY + frame, x + wallW - frame, wallY + frame)
+  else
+    love.graphics.setColor(palette.face[1], palette.face[2], palette.face[3], 0.98)
+    love.graphics.rectangle("fill", x + 1, wallY, wallW, wallH, 2, 2)
+    love.graphics.setColor(palette.line[1], palette.line[2], palette.line[3], 0.95)
+    love.graphics.setLineWidth(1.5 / zoom)
+    love.graphics.rectangle("line", x + 1, wallY, wallW, wallH, 2, 2)
+
+    -- Panel seams (wall-like brick door face).
+    love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.55)
+    love.graphics.setLineWidth(1 / zoom)
+    local midX = x + 1 + wallW * 0.5
+    love.graphics.line(midX, wallY + 5, midX, floorTop - 5)
+    love.graphics.line(x + 6, wallY + wallH * 0.48, x + wallW - 4, wallY + wallH * 0.48)
+
+    if palette.knob then
+      love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.95)
+      love.graphics.circle("fill", midX + wallW * 0.18, wallY + wallH * 0.48, 2.5)
+    end
+    if palette.mark == "plus" then
+      love.graphics.setColor(palette.accent[1], palette.accent[2], palette.accent[3], 0.9)
+      love.graphics.setLineWidth(2 / zoom)
+      love.graphics.line(x + wallW * 0.28, wallY + wallH * 0.5, x + wallW * 0.72, wallY + wallH * 0.5)
+      love.graphics.line(x + wallW * 0.5, wallY + wallH * 0.30, x + wallW * 0.5, wallY + wallH * 0.70)
     end
   end
 end
 
+local PUZZLE_DOOR_PALETTE = {
+  side = { 0.10, 0.18, 0.34 },
+  top = { 0.42, 0.68, 0.95 },
+  face = { 0.10, 0.22, 0.42 },
+  line = { 0.55, 0.78, 1.0 },
+  accent = { 0.70, 0.88, 1.0 },
+  knob = true,
+}
+
+local PRESSURE_DOOR_PALETTE = {
+  side = { 0.12, 0.24, 0.16 },
+  top = { 0.42, 0.88, 0.62 },
+  face = { 0.14, 0.30, 0.20 },
+  line = { 0.42, 0.92, 0.64 },
+  accent = { 0.55, 1.0, 0.74 },
+  mark = "plus",
+}
+
 local function drawPuzzleDoorAt(x, y, size, zoom, side, open)
-  local pad = size * (side and 0.08 or 0.1)
+  if side then
+    -- Caller passes y = floorTop - size (same convention as before).
+    drawDoorElevAt(x, y + size, size, zoom, open, PUZZLE_DOOR_PALETTE)
+    return
+  end
+
+  local pad = size * 0.1
   local dx = x + pad
   local dy = y + pad
   local dw = size - pad * 2
   local dh = size - pad * 2
-  if side then
-    dy = y + size * 0.05
-    dh = size * 0.9
-  end
   if open then
     love.graphics.setColor(0.025, 0.05, 0.08, 0.96)
     love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
@@ -1380,15 +1414,16 @@ local function drawPuzzleDoorAt(x, y, size, zoom, side, open)
 end
 
 local function drawPressureDoorAt(x, y, size, zoom, side, open)
-  local pad = size * (side and 0.08 or 0.1)
+  if side then
+    drawDoorElevAt(x, y + size, size, zoom, open, PRESSURE_DOOR_PALETTE)
+    return
+  end
+
+  local pad = size * 0.1
   local dx = x + pad
   local dy = y + pad
   local dw = size - pad * 2
   local dh = size - pad * 2
-  if side then
-    dy = y + size * 0.05
-    dh = size * 0.9
-  end
   if open then
     love.graphics.setColor(0.03, 0.10, 0.07, 0.96)
     love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
@@ -1412,13 +1447,49 @@ local function drawPressureDoorAt(x, y, size, zoom, side, open)
   end
 end
 
-local function drawPressurePlateAt(centerX, centerY, size, zoom, pressed, side)
-  local w = size * 0.72
-  local h = size * (side and 0.16 or 0.22)
-  local y = centerY - h * 0.5
+-- Side view: plate is recessed into the floor face; top-down stays a pad on the tile.
+local function drawPressurePlateAt(centerX, centerY, size, zoom, pressed, side, faceH)
   if side then
-    y = centerY - h
+    faceH = faceH or (size * Perspective.FLOOR_FACE)
+    local plateW = size * 0.52
+    local plateH = math.max(4, faceH * 0.78)
+    local px = centerX - plateW * 0.5
+    -- Sink slightly into the brick face so ground flanks read as surrounding stone.
+    local py = centerY + (faceH - plateH) * 0.45
+    love.graphics.setColor(0.06, 0.08, 0.10, 0.98)
+    love.graphics.rectangle("fill", px, py, plateW, plateH, 1, 1)
+    if pressed then
+      love.graphics.setColor(0.28, 0.78, 0.54, 1)
+    else
+      love.graphics.setColor(0.55, 0.64, 0.72, 0.95)
+    end
+    love.graphics.setLineWidth(1.25 / zoom)
+    love.graphics.rectangle("line", px, py, plateW, plateH, 1, 1)
+    love.graphics.setColor(
+      pressed and 0.32 or 0.18,
+      pressed and 0.88 or 0.42,
+      pressed and 0.58 or 0.55,
+      0.95
+    )
+    local inset = math.max(1.5, plateH * 0.18)
+    love.graphics.rectangle(
+      "fill",
+      px + inset,
+      py + inset,
+      plateW - inset * 2,
+      plateH - inset * 2,
+      1,
+      1
+    )
+    love.graphics.setColor(0.82, 0.92, 0.98, 0.75)
+    love.graphics.setLineWidth(1 / zoom)
+    love.graphics.line(centerX - plateW * 0.18, py + plateH * 0.5, centerX + plateW * 0.18, py + plateH * 0.5)
+    return
   end
+
+  local w = size * 0.72
+  local h = size * 0.22
+  local y = centerY - h * 0.5
   love.graphics.setColor(0.10, 0.12, 0.15, 0.95)
   love.graphics.rectangle("fill", centerX - w * 0.5, y, w, h, 2, 2)
   if pressed then
@@ -1762,14 +1833,7 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
   for _, piece in pairs(self.puzzlePieceTiles) do
     if isVisible(piece) and include(piece.col, piece.row) then
       local centerX, centerY = self:tileCenter(piece.col, piece.row)
-      drawPuzzlePieceShape(centerX, centerY, self.size, zoom, 1)
-    end
-  end
-
-  for _, canvas in pairs(self.puzzleCanvasTiles) do
-    if isVisible(canvas) and include(canvas.col, canvas.row) then
-      local centerX, centerY = self:tileCenter(canvas.col, canvas.row)
-      drawPuzzleCanvasAt(centerX, centerY, self.size, zoom, canvas.slots, false)
+      drawKeySprite(centerX, centerY, self.size, piece.variant or "top", false, 1, false)
     end
   end
 
@@ -1783,7 +1847,7 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
   for _, door in pairs(self.puzzleDoorTiles) do
     if isVisible(door) and include(door.col, door.row) then
       local x, y = self:tileOrigin(door.col, door.row)
-      drawPuzzleDoorAt(x, y, self.size, zoom, false, self:areAllCanvasesComplete())
+      drawPuzzleDoorAt(x, y, self.size, zoom, false, false)
     end
   end
 
@@ -1950,7 +2014,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     return cache[key]
   end
 
-  local function drawFloorCell(col, row, ice)
+  local function drawFloorCell(col, row, ice, plateCut)
     local x, y = self:tileOrigin(col, row)
     local floorTop = cellFloorTop(col, row)
     local faceTop = floorTop
@@ -1975,6 +2039,45 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       srcW,
       math.max(1, srcLipH)
     )
+
+    local function drawFloorBand(destX, destW, srcOffsetX)
+      if destW < 1 then
+        return
+      end
+      local srcBandW = math.max(1, destW / texScale)
+      local ox, oy = topQuad:getViewport()
+      local _, lipOy = lipQuad:getViewport()
+      local bandKey = "band:" .. col .. ":" .. row .. ":" .. math.floor(srcOffsetX) .. ":" .. math.floor(srcBandW) .. ":" .. (ice and "i" or "g")
+      local bandTop = floorFaceQuadCache[bandKey]
+      if not bandTop then
+        bandTop = love.graphics.newQuad(ox + srcOffsetX, oy, srcBandW, srcTopH, imgW, imgH)
+        floorFaceQuadCache[bandKey] = bandTop
+      end
+      local lipKey = bandKey .. ":lip"
+      local bandLip = floorFaceQuadCache[lipKey]
+      if not bandLip then
+        bandLip = love.graphics.newQuad(ox + srcOffsetX, lipOy, srcBandW, math.max(1, srcLipH), imgW, imgH)
+        floorFaceQuadCache[lipKey] = bandLip
+      end
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(image, bandTop, destX, faceTop, 0, texScale, texScale)
+      love.graphics.setColor(0.55, 0.55, 0.65, 1)
+      love.graphics.draw(image, bandLip, destX, faceTop + topH, 0, texScale, texScale)
+      love.graphics.setColor(0.04, 0.05, 0.10, 0.50)
+      love.graphics.rectangle("fill", destX, faceTop + topH, destW, lip)
+      love.graphics.setColor(0.80, 0.84, 1.0, 0.30)
+      love.graphics.setLineWidth(1 / zoom)
+      love.graphics.line(destX, faceTop, destX + destW, faceTop)
+    end
+
+    if plateCut then
+      -- Ground flanks only: plate is recessed in the middle with no brick under it.
+      local plateW = size * 0.52
+      local flank = (size - plateW) * 0.5
+      drawFloorBand(x, flank, 0)
+      drawFloorBand(x + flank + plateW, flank, (flank + plateW) / texScale)
+      return
+    end
 
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(image, topQuad, x, faceTop, 0, texScale, texScale)
@@ -2107,9 +2210,24 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     end
 
     -- 2) Floor strip — in side view, side/half walls still sit on brick.
+    --    Pressure plates cut the middle out so the plate sits in the ground.
     for col = minCol, maxCol do
       if self:hasGround(col, row) and include(col, row) then
-        drawFloorCell(col, row, self:isIceTile(col, row))
+        local hasPlate = self.pressurePlateTiles[self:key(col, row)] ~= nil
+        drawFloorCell(col, row, self:isIceTile(col, row), hasPlate)
+        if hasPlate then
+          local floorTop = cellFloorTop(col, row)
+          local centerX = (col - 0.5) * size
+          drawPressurePlateAt(
+            centerX,
+            floorTop,
+            size,
+            zoom,
+            self.pressurePlateTiles[self:key(col, row)].pressed,
+            true,
+            faceH
+          )
+        end
       end
     end
 
@@ -2117,8 +2235,17 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       if self:hasGround(col, row) and include(col, row) and self:isInFireZone(col, row) then
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
-        love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
-        love.graphics.rectangle("fill", x + 1, floorTop, size - 2, faceH - 1)
+        local hasPlate = self.pressurePlateTiles[self:key(col, row)] ~= nil
+        if hasPlate then
+          local plateW = size * 0.52
+          local flank = (size - plateW) * 0.5
+          love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
+          love.graphics.rectangle("fill", x + 1, floorTop, flank - 1, faceH - 1)
+          love.graphics.rectangle("fill", x + flank + plateW, floorTop, flank - 1, faceH - 1)
+        else
+          love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
+          love.graphics.rectangle("fill", x + 1, floorTop, size - 2, faceH - 1)
+        end
       end
     end
 
@@ -2171,21 +2298,14 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
         )
       end
 
-      if self.pressurePlateTiles[key] then
-        drawPressurePlateAt(centerX, floorTop, size, zoom, self.pressurePlateTiles[key].pressed, true)
-      end
-
       if self.teaTiles[key] then
         drawTeaCup(centerX, floorTop, zoom, true)
        end
 
       if self.puzzlePieceTiles[key] then
-        drawPuzzlePieceShape(centerX, floorTop - size * 0.28, size, zoom, 1)
-       end
-
-      if self.puzzleCanvasTiles[key] then
-        drawPuzzleCanvasAt(centerX, floorTop, size, zoom, self.puzzleCanvasTiles[key].slots, true)
-       end
+        local piece = self.puzzlePieceTiles[key]
+        drawKeySprite(centerX, floorTop, size, piece.variant or "top", false, 1, true)
+      end
 
        if self.pressureDoorTiles[key] then
          local x = (col - 1) * size
@@ -2196,7 +2316,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
        if self.puzzleDoorTiles[key] then
          local x = (col - 1) * size
          local y = floorTop - size
-         drawPuzzleDoorAt(x, y, size, zoom, true, self:areAllCanvasesComplete())
+         drawPuzzleDoorAt(x, y, size, zoom, true, false)
        end
 
       local boulder = self.boulderTiles[key]

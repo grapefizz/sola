@@ -31,6 +31,74 @@ local PLAYER_MOVE_FRAME_RANGES = {
   side = { first = 10, last = 25 },
 }
 local playerAnimations = {}
+local keySprites
+
+local function getKeySprites()
+  if keySprites then
+    return keySprites
+  end
+  keySprites = {
+    top = love.graphics.newImage("assets/key-top.png"),
+    down = love.graphics.newImage("assets/key-down.png"),
+  }
+  keySprites.top:setFilter("linear", "linear")
+  keySprites.down:setFilter("linear", "linear")
+  return keySprites
+end
+
+local keyHeldSectionQuads = {}
+
+local function getHeldKeySectionQuad(image, section, sideView)
+  local cacheKey = (sideView and "s:" or "t:") .. section
+  if keyHeldSectionQuads[cacheKey] then
+    return keyHeldSectionQuads[cacheKey]
+  end
+  local iw, ih = image:getDimensions()
+  local quad
+  if sideView then
+    local split = math.floor(ih * 0.48)
+    if section == "down" then
+      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
+    else
+      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
+    end
+  else
+    local split = math.floor(iw * 0.48)
+    if section == "down" then
+      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
+    else
+      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
+    end
+  end
+  keyHeldSectionQuads[cacheKey] = quad
+  return quad
+end
+
+local function drawHeldKey(x, y, size, section, full, mode)
+  local sprites = getKeySprites()
+  local sideView = mode == "side"
+  if section ~= "down" then
+    section = "top"
+  end
+  local image = sideView and sprites.down or sprites.top
+  local iw, ih = image:getDimensions()
+  love.graphics.setColor(1, 1, 1, 1)
+
+  if full then
+    local target = size * 0.9
+    local scale = target / math.max(iw, ih)
+    local ox, oy = iw * 0.5, sideView and ih or (ih * 0.5)
+    love.graphics.draw(image, x, y, 0, scale, scale, ox, oy)
+    return
+  end
+
+  local quad = getHeldKeySectionQuad(image, section, sideView)
+  local _, _, qw, qh = quad:getViewport()
+  local target = size * 0.75
+  local scale = target / math.max(qw, qh)
+  local ox, oy = qw * 0.5, sideView and qh or (qh * 0.5)
+  love.graphics.draw(image, quad, x, y, 0, scale, scale, ox, oy)
+end
 
 local function cubicBezierCoordinate(t, firstControl, secondControl)
   local inverse = 1 - t
@@ -210,6 +278,7 @@ function Player.new(col, row, timeLimit)
     dead = false,
     won = false,
     heldItem = nil,
+    heldKeyVariant = nil,
     facingDx = 0,
     facingDy = -1,
     jumpFacingDx = 1,
@@ -325,8 +394,12 @@ function Player:canStepTo(grid, col, row)
   col, row = grid:clamp(col, row)
   local sizeRatio = self:sizeRatio()
   if (col == self.col and row == self.row)
-    or not grid:hasGround(col, row)
-    or grid:isBlocking(col, row, sizeRatio) then
+    or not grid:hasGround(col, row) then
+    return false
+  end
+  -- Full key lets you walk onto a closed key door to unlock it.
+  local keyDoorWithKey = self.heldItem == "key" and grid:isPuzzleDoor(col, row)
+  if not keyDoorWithKey and grid:isBlocking(col, row, sizeRatio) then
     return false
   end
   if self.dead or self.won or self:isMelted() then
@@ -546,17 +619,26 @@ function Player:update(dt, grid)
     grid:addWater(movement.toCol, movement.toRow)
     grid:consumeSnowflake(movement.toCol, movement.toRow)
 
-    -- Pick up a puzzle piece if hands are empty; deposit into canvas if holding one.
-    if self.heldItem == nil and grid:isPuzzlePiece(movement.toCol, movement.toRow) then
-      if grid:consumePuzzlePiece(movement.toCol, movement.toRow) then
-        self.heldItem = "puzzle_piece"
+    -- Key halves assemble in-hand; full key opens a key door on contact.
+    if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
+      if self.heldItem == nil then
+        local ok, variant = grid:consumePuzzlePiece(movement.toCol, movement.toRow)
+        if ok then
+          self.heldItem = "key_half"
+          self.heldKeyVariant = variant or "top"
+        end
+      elseif self.heldItem == "key_half" then
+        if grid:consumePuzzlePiece(movement.toCol, movement.toRow) then
+          self.heldItem = "key"
+          self.heldKeyVariant = nil
+        end
       end
-    elseif self.heldItem == "puzzle_piece" and grid:isPuzzleCanvas(movement.toCol, movement.toRow) then
-      if grid:tryDepositPuzzlePiece(movement.toCol, movement.toRow) then
+    elseif self.heldItem == "key" and grid:isPuzzleDoor(movement.toCol, movement.toRow) then
+      if grid:openPuzzleDoor(movement.toCol, movement.toRow) then
         self.heldItem = nil
+        self.heldKeyVariant = nil
       end
     end
-
     if movement.deadly then
       self.dead = true
       self.timeRemaining = 0
@@ -709,32 +791,20 @@ function Player:draw(grid, camera)
     movementProgress
   )
 
-  if self.heldItem == "puzzle_piece" then
+  if self.heldItem == "key_half" or self.heldItem == "key" then
     local pieceSize = math.max(10, screenSize * 0.55)
     local ox = mode == "side" and screenSize * 0.55 or screenSize * 0.55
     local oy = mode == "side" and -screenSize * 0.55 or -screenSize * 0.35
-    local px, py = x + ox, y + oy
-    local s = pieceSize * 0.42
-    love.graphics.setColor(0.08, 0.08, 0.10, 0.98)
-    love.graphics.polygon(
-      "fill",
-      px - s, py - s * 0.55,
-      px - s * 0.22, py - s * 0.55,
-      px - s * 0.22, py - s,
-      px + s * 0.22, py - s,
-      px + s * 0.22, py - s * 0.55,
-      px + s, py - s * 0.55,
-      px + s, py + s * 0.15,
-      px + s * 0.55, py + s * 0.15,
-      px + s * 0.55, py + s * 0.55,
-      px + s, py + s * 0.55,
-      px + s, py + s,
-      px - s, py + s
+    drawHeldKey(
+      x + ox,
+      y + oy,
+      pieceSize,
+      self.heldKeyVariant or "top",
+      self.heldItem == "key",
+      mode
     )
   end
 end
-
-
 function Player:drawHud(grid)
   love.graphics.setColor(0.95, 0.93, 0.98)
   love.graphics.print("Ice Cube", 18, 14)
@@ -749,10 +819,27 @@ function Player:drawHud(grid)
     if grid and self:inSideView(grid) then
       line = line .. "  ·  Space to jump"
     end
-    if self.heldItem == "puzzle_piece" then
-      line = line .. "  ·  Holding puzzle piece"
+    if self.heldItem == "key_half" then
+      line = line .. "  ·  Holding key half"
+    elseif self.heldItem == "key" then
+      line = line .. "  ·  Holding key"
     end
     love.graphics.print(line, 18, 38)
+<<<<<<< HEAD
+    if grid and grid:hasKeyDoor() and not grid:isTeaUnlocked() then
+      love.graphics.setColor(0.75, 0.72, 0.55)
+      if self.heldItem == "key" then
+        love.graphics.print("Walk into the key door to open it.", 18, 58)
+      elseif self.heldItem == "key_half" then
+        love.graphics.print("Touch another key half to assemble the full key.", 18, 58)
+      else
+        love.graphics.print("Find key halves and assemble them to open the key door.", 18, 58)
+      end
+    elseif grid and grid:isTeaTile(self.col, self.row) and not grid:isTeaUnlocked() then
+      love.graphics.setColor(0.85, 0.65, 0.45)
+      love.graphics.print("Open all key doors to unlock the iced tea.", 18, 58)
+    end  else
+=======
     if grid and grid:hasPuzzleCanvas() and not grid:isTeaUnlocked() then
       love.graphics.setColor(0.72, 0.67, 0.80)
       love.graphics.print("Find puzzle pieces and place them on the canvas.", 18, 58)
@@ -761,6 +848,7 @@ function Player:drawHud(grid)
       love.graphics.print("Complete the puzzle to unlock the iced tea.", 18, 58)
     end
   else
+>>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
     love.graphics.print("The ice cube has melted!", 18, 38)
   end
 end

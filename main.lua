@@ -269,13 +269,16 @@ local function buildLevelPreview(name)
   love.graphics.translate(ox, oy)
   love.graphics.scale(scale, scale)
 
+  -- Level cards always preview top-down (painted side zones still draw as side).
+  local prevMode = Perspective.mode
+  Perspective.set("topdown")
   snap:draw(1, nil, false)
 
   local cx, cy = snap:tileCenter(SPAWN_COL, SPAWN_ROW)
-  local size = Perspective.isSide() and 30 or 26
-  Player.drawSprite(cx, cy, size, 0, Perspective.mode)
+  Player.drawSprite(cx, cy, 26, 0, "topdown")
   love.graphics.pop()
 
+  Perspective.set(prevMode)
   love.graphics.setCanvas(prevCanvas)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.setLineWidth(1)
@@ -997,6 +1000,8 @@ local function levelsGridMetrics(width, height)
   return gridX, gridY, gridW, gridH
 end
 
+<<<<<<< HEAD
+=======
 local function perspectiveButtonRect(width, height)
   local bw, bh = 148, 34
   local x = width - bw - 18
@@ -1054,6 +1059,7 @@ local function drawPerspectiveButton(width, height, alpha)
   love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
 end
 
+>>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
 local function levelCardRect(index, width, height)
   local localIndex = index - levelScroll * CARD_COLS
   if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
@@ -1586,11 +1592,15 @@ local function drawLevels(width, height)
   end
 
   love.graphics.setFont(fonts.small)
+<<<<<<< HEAD
+  love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
+  local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
+=======
   setUiColor("textMuted", 0.9 * e)
   local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
+>>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
-  drawPerspectiveButton(width, height, e)
   drawSnow()
 end
 
@@ -1824,8 +1834,6 @@ function love.keypressed(key)
       intro = 0
       love.window.setTitle("Ice Cube")
       playSfx(sfxClick)
-    elseif key == "v" then
-      togglePerspectiveView()
     elseif #levelList > 0 then
       if key == "left" or key == "a" then
         levelSelected = levelSelected - 1
@@ -2032,10 +2040,6 @@ function love.mousepressed(x, y, button)
       bumpShake(5, 0.22)
     end
   elseif state == "levels" then
-    if perspectiveButtonHit(x, y, width, height) then
-      togglePerspectiveView()
-      return
-    end
     local hit = levelItemHit(x, y, width, height)
     if hit > 0 then
       levelSelected = hit
