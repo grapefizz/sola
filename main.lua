@@ -47,7 +47,7 @@ local levelScroll = 0 -- row offset for card grid
 local levelIntro = 0
 local currentLevelName = nil
 local fridgeTransition = nil
-local FRIDGE_FADE_DURATION = 0.55
+local FRIDGE_FADE_DURATION = 0.72
 local playOverlay = nil -- nil | "complete" | "dead" | "pause"
 local overlayReason = nil -- nil | "burned" | "melted"
 local overlaySelected = 1
@@ -607,9 +607,8 @@ local function fridgeFadeAlpha()
     1,
     fridgeTransition.elapsed / FRIDGE_FADE_DURATION
   )
-  if fridgeTransition.phase == "out" then
-    return progressValue
-  end
+  progressValue = progressValue * progressValue * (3 - 2 * progressValue)
+  if fridgeTransition.phase == "out" then return progressValue end
   return 1 - progressValue
 end
 
@@ -626,12 +625,40 @@ local function drawFridgeFade(width, height)
   local top = centerY - windowSize * 0.5
   local right = centerX + windowSize * 0.5
   local bottom = centerY + windowSize * 0.5
+  local progressValue = math.min(1, fridgeTransition.elapsed / FRIDGE_FADE_DURATION)
+  local centerFade
+  if fridgeTransition.phase == "out" then
+    centerFade = math.max(0, (progressValue - 0.72) / 0.28)
+  else
+    centerFade = math.max(0, 1 - progressValue / 0.28)
+  end
+  centerFade = centerFade * centerFade * (3 - 2 * centerFade)
 
   love.graphics.setColor(0, 0, 0, fade)
   love.graphics.rectangle("fill", 0, 0, width, math.max(0, top))
   love.graphics.rectangle("fill", 0, math.min(height, bottom), width, math.max(0, height - bottom))
   love.graphics.rectangle("fill", 0, math.max(0, top), math.max(0, left), math.max(0, math.min(height, bottom) - math.max(0, top)))
   love.graphics.rectangle("fill", math.min(width, right), math.max(0, top), math.max(0, width - right), math.max(0, math.min(height, bottom) - math.max(0, top)))
+
+  -- Feather the edge so the four-tile opening blends into the blackout.
+  local feather = math.max(8, grid.size * camera.zoom * 0.28)
+  local bands = 10
+  for index = 1, bands do
+    local inset = feather * (index - 1) / bands
+    local band = feather / bands + 1
+    local edgeAlpha = fade * 0.62 * (1 - (index - 1) / bands)
+    love.graphics.setColor(0, 0, 0, edgeAlpha)
+    love.graphics.rectangle("fill", left + inset, top + inset, windowSize - inset * 2, band)
+    love.graphics.rectangle("fill", left + inset, bottom - inset - band, windowSize - inset * 2, band)
+    love.graphics.rectangle("fill", left + inset, top + inset + band, band, windowSize - inset * 2 - band * 2)
+    love.graphics.rectangle("fill", right - inset - band, top + inset + band, band, windowSize - inset * 2 - band * 2)
+  end
+
+  -- Hide the exact level swap, then gently reveal the new spawn fridge.
+  if centerFade > 0 then
+    love.graphics.setColor(0, 0, 0, centerFade)
+    love.graphics.rectangle("fill", left, top, windowSize, windowSize)
+  end
   love.graphics.setColor(1, 1, 1, 1)
 end
 
