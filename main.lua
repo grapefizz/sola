@@ -156,6 +156,16 @@ local grid, player, camera, editor
 -- Smooth camera follow
 local cameraFollowX, cameraFollowY
 local cameraFollowSpeed = 10
+local GAMEPLAY_MIN_ZOOM = 3.25
+local GAMEPLAY_MAX_ZOOM = 4
+local cameraPerspective
+
+local function playerPerspectiveMode()
+  if grid and next(grid.sideViewTiles) then
+    return grid:isSideView(player.col, player.row) and "side" or "topdown"
+  end
+  return Perspective.mode
+end
 
 local function loadProgress()
   progress.finished = {}
@@ -418,8 +428,9 @@ local function restartRun()
   local timeLimit = editor and editor:getLevelTime() or 40
   player = Player.new(SPAWN_COL, SPAWN_ROW, timeLimit)
   local cameraX, cameraY = grid:tileCenter(player.col, player.row)
-  camera = Camera.new(cameraX, cameraY, 2)
+  camera = Camera.new(cameraX, cameraY, GAMEPLAY_MIN_ZOOM)
   cameraFollowX, cameraFollowY = cameraX, cameraY
+  cameraPerspective = playerPerspectiveMode()
   grid:addWater(player.col, player.row)
   playOverlay = nil
   overlayReason = nil
@@ -436,6 +447,7 @@ local function startPlay(openEditor, levelName)
     local cameraX, cameraY = grid:tileCenter(SPAWN_COL, SPAWN_ROW)
     camera = Camera.new(cameraX, cameraY, 2)
     cameraFollowX, cameraFollowY = cameraX, cameraY
+    cameraPerspective = nil
     editor:setActive(true)
     love.window.setTitle("Ice Cube — Level Editor")
     return
@@ -1203,6 +1215,13 @@ local function updatePlayScreen(dt, width, height)
   if playOverlay ~= "pause" then
     player:update(dt, grid)
     local cameraX, cameraY = grid:tileCenter(player.col, player.row)
+    local perspectiveMode = playerPerspectiveMode()
+    if perspectiveMode ~= cameraPerspective then
+      -- Entering a differently painted zone hands the camera to that view.
+      -- Keep a close crop while retaining a sliver of the neighboring zone.
+      cameraPerspective = perspectiveMode
+      camera.zoom = math.max(camera.zoom, GAMEPLAY_MIN_ZOOM)
+    end
     local followT = 1 - math.exp(-cameraFollowSpeed * dt)
     cameraFollowX = cameraFollowX + (cameraX - cameraFollowX) * followT
     cameraFollowY = cameraFollowY + (cameraY - cameraFollowY) * followT
@@ -1944,6 +1963,8 @@ function love.keypressed(key)
         if currentLevelName then
           editor:loadLevel(grid, currentLevelName)
         end
+        camera.zoom = 2
+        cameraPerspective = nil
       end
       return
     end
@@ -2083,10 +2104,12 @@ function love.wheelmoved(_, y)
     if state == "play" and y ~= 0 then
         if editor.active then
             editor:wheelmoved(y, grid, camera)
-        else
-            camera.zoom = math.max(
-                0.5,
-                math.min(4, camera.zoom + y * 0.15)
+        elseif y > 0 then
+            -- Gameplay can zoom farther in, but never back out past its
+            -- perspective-focused framing. Editor zoom is unchanged above.
+            camera.zoom = math.min(
+                GAMEPLAY_MAX_ZOOM,
+                math.max(GAMEPLAY_MIN_ZOOM, camera.zoom + y * 0.15)
             )
         end
     end
