@@ -1684,7 +1684,7 @@ local function drawCredits(width, height)
     "Game Devs:",
     "Lora Vega",
     "Ari Karakushi",
-    "Diell Jashari",
+    "Dielli Jashari",
     "Ronin Bekolli",
     "Tuan Bullaku",
     "",
@@ -2159,11 +2159,22 @@ function love.mousemoved(x, y, dx, dy)
 end
 
 function love.wheelmoved(_, y)
-  if state == "levels" and y ~= 0 then
-    levelScroll = math.max(0, math.min(maxLevelScroll(), levelScroll - y))
-    return
-  end
-  if state == "play" and editor.active then
-    editor:wheelmoved(y, grid, camera)
-  end
+    if state == "levels" and y ~= 0 then
+        levelScroll = math.max(
+            0,
+            math.min(maxLevelScroll(), levelScroll - y)
+        )
+        return
+    end
+
+    if state == "play" and y ~= 0 then
+        if editor.active then
+            editor:wheelmoved(y, grid, camera)
+        else
+            camera.zoom = math.max(
+                0.5,
+                math.min(4, camera.zoom + y * 0.15)
+            )
+        end
+    end
 end
