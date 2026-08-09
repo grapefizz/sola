@@ -9,14 +9,15 @@ local FIRE_FRAME_COUNT = 9
 local FIRE_FRAME_DURATION = 1 / 12
 local DEFAULT_SNOWFLAKE_SECONDS = 3
 local PUDDLE_FRAME_SIZE = 256
-local PUDDLE_FRAME_COUNT = 15
-local PUDDLE_FRAME_DURATION = 1 / 14
+-- One long connecting transition frame followed by the source GIF's 12
+-- visible drag frames. Its 15 fully transparent trailing frames are omitted.
+local PUDDLE_FRAME_COUNT = 13
+local PUDDLE_FRAME_DURATION = 1 / 24
 local PUDDLE_ANIMATION_DURATION = PUDDLE_FRAME_COUNT * PUDDLE_FRAME_DURATION
--- Extra linger after the last drippy pose so the dissolve finishes softly.
-local PUDDLE_FADE_DURATION = 0.35
-local PUDDLE_LIFETIME = PUDDLE_ANIMATION_DURATION + PUDDLE_FADE_DURATION
--- Visible water sits low in the source frame; keep it centered on the tile.
-local PUDDLE_CONTENT_CENTER_Y = 216
+-- The visible water is centered around y=216 in its 256px source frame.
+-- Counter this transparent-canvas offset when the strip rotates vertically.
+local PUDDLE_CONTENT_Y_OFFSET = (216 - PUDDLE_FRAME_SIZE * 0.5)
+  / PUDDLE_FRAME_SIZE
 local tileSprites
 
 Grid.DEFAULT_SNOWFLAKE_SECONDS = DEFAULT_SNOWFLAKE_SECONDS
@@ -426,46 +427,31 @@ end
 function Grid:updatePuddles(dt)
   for key, puddle in pairs(self.puddleTiles) do
     puddle.age = (puddle.age or 0) + dt
-    puddle.elapsed = math.min(
-      (puddle.elapsed or 0) + dt,
-      PUDDLE_ANIMATION_DURATION
-    )
-    if puddle.age >= PUDDLE_LIFETIME then
+    puddle.elapsed = ((puddle.elapsed or 0) + dt)
+      % PUDDLE_ANIMATION_DURATION
+    if puddle.age >= PUDDLE_ANIMATION_DURATION then
       self.puddleTiles[key] = nil
     end
   end
 end
 
-local function puddleAlpha(puddle)
-  local age = puddle.age or 0
-  if age <= PUDDLE_ANIMATION_DURATION then
-    return 1
-  end
-  local t = math.min(1, (age - PUDDLE_ANIMATION_DURATION) / PUDDLE_FADE_DURATION)
-  return 1 - (t * t * (3 - 2 * t))
-end
-
--- Crossfade between consecutive sheet frames for a seamless drip dissolve.
-local function puddleFrameBlend(sprites, puddle)
+local function puddleFrame(sprites, puddle)
   local elapsed = math.max(0, puddle.elapsed or 0)
-  local pos = 1 + math.min(1, elapsed / PUDDLE_ANIMATION_DURATION)
-    * (PUDDLE_FRAME_COUNT - 1)
-  local index = math.min(PUDDLE_FRAME_COUNT, math.floor(pos))
-  local frac = pos - index
-  local fromQuad = sprites.puddleDragFrames[index]
-  if index >= PUDDLE_FRAME_COUNT then
-    return fromQuad, fromQuad, 0
-  end
-  local blend = frac * frac * (3 - 2 * frac)
-  return fromQuad, sprites.puddleDragFrames[index + 1], blend
+  local index = math.min(
+    PUDDLE_FRAME_COUNT,
+    math.floor(elapsed / PUDDLE_FRAME_DURATION) + 1
+  )
+  return sprites.puddleDragFrames[index]
 end
 
-local function puddleMirror(puddle)
-  -- Keep the art floor-oriented for every direction so up/down stays a puddle,
-  -- not a rotated ribbon. Mirror so the drip fingers trail away from the player.
-  if (puddle.dx or 0) > 0 then return -1 end
-  if (puddle.dy or 0) > 0 then return -1 end
-  return 1
+local function puddleTransform(puddle)
+  -- Keep the artwork upright for horizontal movement. Mirroring instead of
+  -- rotating 180 degrees keeps its wet edge aligned with the player's puddle.
+  if (puddle.dx or 0) > 0 then return 0, -1 end
+  if (puddle.dx or 0) < 0 then return 0, 1 end
+  if (puddle.dy or 0) > 0 then return -math.pi * 0.5, 1 end
+  if (puddle.dy or 0) < 0 then return math.pi * 0.5, 1 end
+  return 0, 1
 end
 
 local function puddleDirection(puddle)
@@ -473,41 +459,6 @@ local function puddleDirection(puddle)
   local dy = puddle.dy or 0
   return dx == 0 and 0 or (dx > 0 and 1 or -1),
     dy == 0 and 0 or (dy > 0 and 1 or -1)
-end
-
-local function puddleScales(puddle, tileSize, frameWidth, frameHeight)
-  local mirror = puddleMirror(puddle)
-  local directionX, directionY = puddleDirection(puddle)
-  -- Full tile coverage; floor-oriented band stays the natural puddle thickness.
-  local scaleAlong = mirror * tileSize / frameWidth
-  local scaleAcross = tileSize / frameHeight
-  local contentShiftY = (PUDDLE_CONTENT_CENTER_Y / PUDDLE_FRAME_SIZE - 0.5)
-    * frameHeight * scaleAcross
-  return scaleAlong, scaleAcross, directionX, directionY, contentShiftY
-end
-
-local function drawPuddleDrag(sprites, puddle, x, y, scaleAlong, scaleAcross)
-  local fromQuad, toQuad, blend = puddleFrameBlend(sprites, puddle)
-  local alpha = puddleAlpha(puddle)
-  local ox = PUDDLE_FRAME_SIZE * 0.5
-  local oy = PUDDLE_FRAME_SIZE * 0.5
-  if blend <= 0.001 then
-    love.graphics.setColor(1, 1, 1, alpha)
-    love.graphics.draw(
-      sprites.puddleDrag, fromQuad, x, y, 0, scaleAlong, scaleAcross, ox, oy
-    )
-    return
-  end
-  if blend < 0.999 then
-    love.graphics.setColor(1, 1, 1, alpha * (1 - blend))
-    love.graphics.draw(
-      sprites.puddleDrag, fromQuad, x, y, 0, scaleAlong, scaleAcross, ox, oy
-    )
-  end
-  love.graphics.setColor(1, 1, 1, alpha * blend)
-  love.graphics.draw(
-    sprites.puddleDrag, toQuad, x, y, 0, scaleAlong, scaleAcross, ox, oy
-  )
 end
 
 local function eachPuddleBridgeTile(puddle, callback)
@@ -2220,41 +2171,41 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
   for _, puddle in pairs(self.puddleTiles) do
     if isVisible(puddle) and include(puddle.col, puddle.row) then
       local x, y = self:tileOrigin(puddle.col, puddle.row)
-      local scaleAlong, scaleAcross, directionX, directionY, contentShiftY =
-        puddleScales(puddle, self.size, PUDDLE_FRAME_SIZE, PUDDLE_FRAME_SIZE)
-      local overlap = self.size * 0.08
-      drawPuddleDrag(
-        sprites,
-        puddle,
-        x + self.size * 0.5 + directionX * overlap,
-        y + self.size * 0.5 + directionY * overlap - contentShiftY,
-        scaleAlong,
-        scaleAcross
+      local angle, directionScale = puddleTransform(puddle)
+      local directionX, directionY = puddleDirection(puddle)
+      local overlap = self.size * 0.06
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.puddleDrag,
+        puddleFrame(sprites, puddle),
+        x + self.size * 0.5
+          + directionX * overlap
+          - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
+        y + self.size * 0.5 + directionY * overlap,
+        angle,
+        directionScale * self.size * 1.12 / PUDDLE_FRAME_SIZE,
+        self.size / PUDDLE_FRAME_SIZE,
+        PUDDLE_FRAME_SIZE * 0.5,
+        PUDDLE_FRAME_SIZE * 0.5
       )
-      local bridgeAlpha = puddleAlpha(puddle)
       eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
         if include(bridgeCol, bridgeRow) then
           local bridgeX, bridgeY = self:tileOrigin(bridgeCol, bridgeRow)
-          local longW = sprites.puddleLong:getWidth()
-          local longH = sprites.puddleLong:getHeight()
-          local bAlong, bAcross, _, _, bShiftY =
-            puddleScales(puddle, self.size, longW, longH)
-          love.graphics.setColor(1, 1, 1, bridgeAlpha)
           love.graphics.draw(
             sprites.puddleLong,
-            bridgeX + self.size * 0.5,
-            bridgeY + self.size * 0.5 - bShiftY,
-            0,
-            bAlong,
-            bAcross,
-            longW * 0.5,
-            longH * 0.5
+            bridgeX + self.size * 0.5
+              - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
+            bridgeY + self.size * 0.5,
+            angle,
+            directionScale * self.size * 1.12 / sprites.puddleLong:getWidth(),
+            self.size / sprites.puddleLong:getHeight(),
+            sprites.puddleLong:getWidth() * 0.5,
+            sprites.puddleLong:getHeight() * 0.5
           )
         end
       end)
     end
   end
-  love.graphics.setColor(1, 1, 1, 1)
 
   -- Behind full walls get an inset ground pad; all walls retain their ground tile.
   local behindPad = math.max(8, math.floor(self.size * 0.18))
@@ -2794,42 +2745,42 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
         local puddle = self.puddleTiles[self:key(col, row)]
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
-        local scaleAlong, scaleAcross, directionX, directionY, contentShiftY =
-          puddleScales(puddle, size, PUDDLE_FRAME_SIZE, PUDDLE_FRAME_SIZE)
-        local overlap = size * 0.08
-        drawPuddleDrag(
-          sprites,
-          puddle,
-          x + size * 0.5 + directionX * overlap,
-          floorTop - size * 0.5 + directionY * overlap - contentShiftY,
-          scaleAlong,
-          scaleAcross
+        local angle, directionScale = puddleTransform(puddle)
+        local directionX, directionY = puddleDirection(puddle)
+        local overlap = size * 0.06
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(
+          sprites.puddleDrag,
+          puddleFrame(sprites, puddle),
+          x + size * 0.5
+            + directionX * overlap
+            - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
+          floorTop - size * 0.5 + directionY * overlap,
+          angle,
+          directionScale * size * 1.12 / PUDDLE_FRAME_SIZE,
+          size / PUDDLE_FRAME_SIZE,
+          PUDDLE_FRAME_SIZE * 0.5,
+          PUDDLE_FRAME_SIZE * 0.5
         )
-        local bridgeAlpha = puddleAlpha(puddle)
         eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
           if include(bridgeCol, bridgeRow) then
             local bridgeX = (bridgeCol - 1) * size
             local bridgeFloorTop = cellFloorTop(bridgeCol, bridgeRow)
-            local longW = sprites.puddleLong:getWidth()
-            local longH = sprites.puddleLong:getHeight()
-            local bAlong, bAcross, _, _, bShiftY =
-              puddleScales(puddle, size, longW, longH)
-            love.graphics.setColor(1, 1, 1, bridgeAlpha)
             love.graphics.draw(
               sprites.puddleLong,
-              bridgeX + size * 0.5,
-              bridgeFloorTop - size * 0.5 - bShiftY,
-              0,
-              bAlong,
-              bAcross,
-              longW * 0.5,
-              longH * 0.5
+              bridgeX + size * 0.5
+                - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
+              bridgeFloorTop - size * 0.5,
+              angle,
+              directionScale * size * 1.12 / sprites.puddleLong:getWidth(),
+              size / sprites.puddleLong:getHeight(),
+              sprites.puddleLong:getWidth() * 0.5,
+              sprites.puddleLong:getHeight() * 0.5
             )
           end
         end)
       end
     end
-    love.graphics.setColor(1, 1, 1, 1)
 
     -- 3) Front-layer front / half / cracked walls
     for col = minCol, maxCol do
