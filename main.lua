@@ -17,6 +17,27 @@ local snow = {}
 local fonts = {}
 local mouseX, mouseY = 0, 0
 
+-- UI palette sampled from the cave background, with the character's blue as
+-- the interactive accent.
+local UI = {
+  shadow = { 0.07, 0.03, 0.09 },
+  panelOuter = { 0.13, 0.07, 0.16 },
+  panelFill = { 0.23, 0.19, 0.34 },
+  panelRim = { 0.34, 0.29, 0.47 },
+  panelHighlight = { 0.46, 0.42, 0.65 },
+  accent = { 0.39, 0.61, 0.83 },
+  accentBright = { 0.58, 0.75, 0.92 },
+  selection = { 0.42, 0.29, 0.51 },
+  selectionBright = { 0.65, 0.44, 0.62 },
+  text = { 0.95, 0.93, 0.98 },
+  textMuted = { 0.72, 0.67, 0.80 },
+}
+
+local function setUiColor(name, alpha)
+  local color = UI[name]
+  love.graphics.setColor(color[1], color[2], color[3], alpha or 1)
+end
+
 -- level select (Stardew-style blue panel)
 local levelList = {}
 local levelSelected = 1
@@ -573,7 +594,7 @@ local function drawSnow()
   if not getSetting("snow") then return end
   for _, f in ipairs(snow) do
     local a = f.alpha * (0.55 + 0.45 * math.sin(f.phase + elapsed * 0.9))
-    love.graphics.setColor(0.85, 0.94, 1.0, a)
+    setUiColor("accentBright", a)
     if f.big then
       local ox = snowBig:getWidth() * 0.5
       local oy = snowBig:getHeight() * 0.5
@@ -597,35 +618,36 @@ local function drawPanel(x, y, w, h, alpha)
   x, y, w, h = math.floor(x), math.floor(y), math.floor(w), math.floor(h)
   alpha = alpha or 1
 
-  love.graphics.setColor(0, 0, 0, 0.28 * alpha)
+  setUiColor("shadow", 0.55 * alpha)
   love.graphics.rectangle("fill", x + 4, y + 4, w, h)
 
   -- outer border
-  love.graphics.setColor(0.10, 0.22, 0.36, alpha)
+  setUiColor("panelOuter", alpha)
   love.graphics.rectangle("fill", x, y, w, h)
 
   -- mid rim
-  love.graphics.setColor(0.55, 0.78, 0.95, alpha)
+  setUiColor("panelRim", alpha)
   love.graphics.rectangle("fill", x + 2, y + 2, w - 4, h - 4)
 
   -- fill
-  love.graphics.setColor(0.38, 0.58, 0.78, alpha)
+  setUiColor("panelFill", alpha)
   love.graphics.rectangle("fill", x + 4, y + 4, w - 8, h - 8)
 
   -- soft highlight
-  love.graphics.setColor(0.75, 0.90, 1.0, 0.35 * alpha)
+  setUiColor("panelHighlight", 0.55 * alpha)
   love.graphics.rectangle("fill", x + 4, y + 4, w - 8, 3)
 end
 
 local function drawRowHighlight(x, y, w, h, alpha)
-  love.graphics.setColor(0.62, 0.84, 1.0, 0.55 * alpha)
+  setUiColor("selection", 0.88 * alpha)
   love.graphics.rectangle("fill", x, y, w, h)
-  love.graphics.setColor(0.85, 0.95, 1.0, 0.35 * alpha)
+  setUiColor("selectionBright", 0.72 * alpha)
   love.graphics.rectangle("fill", x, y, w, 2)
 end
 
 function love.load()
-  love.graphics.setBackgroundColor(0.04, 0.07, 0.12)
+  setUiColor("shadow")
+  love.graphics.setBackgroundColor(UI.shadow[1], UI.shadow[2], UI.shadow[3])
   love.graphics.setDefaultFilter("linear", "linear")
   love.mouse.setVisible(true)
 
@@ -708,15 +730,15 @@ end
 
 local function drawLockIcon(x, y, alpha)
   -- tiny padlock: shackle + body
-  love.graphics.setColor(0.08, 0.18, 0.30, alpha)
+  setUiColor("panelOuter", alpha)
   love.graphics.setLineWidth(2.5)
   love.graphics.arc("line", "open", x + 7, y + 5, 5, math.pi, math.pi * 2)
   love.graphics.rectangle("fill", x + 1, y + 8, 12, 10, 2, 2)
-  love.graphics.setColor(0.72, 0.82, 0.92, alpha)
+  setUiColor("accentBright", alpha)
   love.graphics.setLineWidth(2)
   love.graphics.arc("line", "open", x + 7, y + 5, 5, math.pi, math.pi * 2)
   love.graphics.rectangle("fill", x + 2, y + 9, 10, 8, 2, 2)
-  love.graphics.setColor(0.35, 0.48, 0.62, alpha)
+  setUiColor("panelHighlight", alpha)
   love.graphics.circle("fill", x + 7, y + 12, 1.6)
   love.graphics.rectangle("fill", x + 6.2, y + 12, 1.6, 3)
   love.graphics.setLineWidth(1)
@@ -887,7 +909,7 @@ local function drawPlayOverlay(width, height)
   local px, py, pw, ph, rowH, titleH, pad = overlayPanelRect(width, height)
   py = py + math.floor((1 - e) * 10)
 
-  love.graphics.setColor(0.04, 0.10, 0.18, 0.42 * e)
+  setUiColor("shadow", 0.58 * e)
   love.graphics.rectangle("fill", 0, 0, width, height)
 
   drawPanel(px, py, pw, ph, e)
@@ -908,29 +930,29 @@ local function drawPlayOverlay(width, height)
 
   love.graphics.setFont(fonts.menu)
   local tx = math.floor(px + (pw - fonts.menu:getWidth(title)) * 0.5)
-  love.graphics.setColor(0.06, 0.16, 0.30, e)
+  setUiColor("shadow", e)
   love.graphics.print(title, tx + 1, py + 14)
-  love.graphics.setColor(0.95, 0.98, 1.0, e)
+  setUiColor("text", e)
   love.graphics.print(title, tx, py + 13)
 
   local dividerY = py + 46
   if reason then
     love.graphics.setFont(fonts.credits)
     local rx = math.floor(px + (pw - fonts.credits:getWidth(reason)) * 0.5)
-    love.graphics.setColor(0.06, 0.16, 0.30, e * 0.9)
+    setUiColor("shadow", e * 0.9)
     love.graphics.print(reason, rx + 1, py + 44)
-    love.graphics.setColor(0.78, 0.92, 1.0, e)
+    setUiColor("accentBright", e)
     love.graphics.print(reason, rx, py + 43)
     if reasonDetail then
       love.graphics.setFont(fonts.small)
       local dx = math.floor(px + (pw - fonts.small:getWidth(reasonDetail)) * 0.5)
-      love.graphics.setColor(0.70, 0.84, 0.95, 0.85 * e)
+      setUiColor("textMuted", 0.9 * e)
       love.graphics.print(reasonDetail, dx, py + 64)
     end
     dividerY = py + titleH - 10
   end
 
-  love.graphics.setColor(0.20, 0.38, 0.55, 0.5 * e)
+  setUiColor("panelHighlight", 0.65 * e)
   love.graphics.rectangle("fill", px + 24, dividerY, pw - 48, 2)
 
   local y0 = py + titleH + pad - 4
@@ -948,7 +970,7 @@ local function drawPlayOverlay(width, height)
       drawRowHighlight(rowX, y, rowW, rowHDraw, e * pulse)
       local cx = rowX + 14
       local cy = y + math.floor(rowHDraw * 0.5)
-      love.graphics.setColor(0.45, 0.78, 1.0, 0.45 * e)
+      setUiColor("selectionBright", 0.72 * e)
       love.graphics.polygon("fill", cx - 2, cy - 8, cx + 11, cy, cx - 2, cy + 8)
       love.graphics.setColor(1, 1, 1, e)
       love.graphics.polygon("fill", cx, cy - 6, cx + 9, cy, cx, cy + 6)
@@ -959,9 +981,9 @@ local function drawPlayOverlay(width, height)
     local th = fonts.credits:getHeight()
     local lx = px + 36
     local ly = y + math.floor((rowHDraw - th) * 0.5)
-    love.graphics.setColor(0.06, 0.16, 0.30, labelA)
+    setUiColor("shadow", labelA)
     love.graphics.print(item.label, lx + 1, ly + 1)
-    love.graphics.setColor(0.95, 0.98, 1.0, labelA)
+    setUiColor("text", labelA)
     love.graphics.print(item.label, lx, ly)
   end
 end
@@ -1003,12 +1025,12 @@ local function drawPerspectiveButton(width, height, alpha)
   local hover = perspectiveButtonHit(mouseX, mouseY, width, height)
   local side = Perspective.isSide()
 
-  love.graphics.setColor(0.05, 0.12, 0.22, 0.82 * alpha)
+  setUiColor("panelOuter", 0.92 * alpha)
   love.graphics.rectangle("fill", x, y, w, h, 6, 6)
   if hover or side then
-    love.graphics.setColor(0.55, 0.82, 1.0, (hover and 0.85 or 0.55) * alpha)
+    setUiColor("selectionBright", (hover and 0.95 or 0.72) * alpha)
   else
-    love.graphics.setColor(0.35, 0.55, 0.72, 0.55 * alpha)
+    setUiColor("panelHighlight", 0.75 * alpha)
   end
   love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2, 5, 5)
@@ -1022,13 +1044,13 @@ local function drawPerspectiveButton(width, height, alpha)
     love.graphics.setColor(0.92, 0.78, 0.58, alpha)
     love.graphics.rectangle("fill", gx + 4, gy, 10, 3, 1, 1)
   else
-    love.graphics.setColor(0.35, 0.72, 0.95, alpha)
+    setUiColor("accent", alpha)
     love.graphics.rectangle("fill", gx, gy + 4, 16, 12, 2, 2)
   end
 
   love.graphics.setFont(fonts.small)
   local label = Perspective.shortLabel() .. " View"
-  love.graphics.setColor(0.92, 0.97, 1.0, alpha)
+  setUiColor("text", alpha)
   love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
 end
 
@@ -1071,12 +1093,12 @@ local function drawStatusBadge(x, y, finished, alpha, locked)
   local bx = math.floor(x - bw * 0.5)
 
   if locked then
-    love.graphics.setColor(0.16, 0.22, 0.32, 0.88 * alpha)
+    setUiColor("panelOuter", 0.92 * alpha)
     love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
-    love.graphics.setColor(0.55, 0.68, 0.82, 0.75 * alpha)
+    setUiColor("panelHighlight", 0.85 * alpha)
     love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
     drawLockIcon(bx + 4, y + math.floor((bh - 18) * 0.5), alpha * 0.95)
-    love.graphics.setColor(0.82, 0.90, 0.98, 0.9 * alpha)
+    setUiColor("textMuted", 0.95 * alpha)
     love.graphics.print(label, bx + 18, y + 2)
   elseif finished then
     love.graphics.setColor(0.18, 0.42, 0.28, 0.9 * alpha)
@@ -1089,11 +1111,11 @@ local function drawStatusBadge(x, y, finished, alpha, locked)
     love.graphics.setColor(0.92, 1.0, 0.95, alpha)
     love.graphics.print(label, bx + 18, y + 2)
   else
-    love.graphics.setColor(0.22, 0.38, 0.55, 0.8 * alpha)
+    setUiColor("panelOuter", 0.88 * alpha)
     love.graphics.rectangle("fill", bx, y, bw, bh, 4, 4)
-    love.graphics.setColor(0.65, 0.82, 0.98, 0.7 * alpha)
+    setUiColor("accent", 0.82 * alpha)
     love.graphics.rectangle("line", bx, y, bw, bh, 4, 4)
-    love.graphics.setColor(0.85, 0.94, 1.0, 0.9 * alpha)
+    setUiColor("text", 0.95 * alpha)
     love.graphics.print(label, bx + 7, y + 2)
   end
   return bw
@@ -1262,19 +1284,19 @@ local function drawAtmosphere(width, height)
     x = x + tileW
   end
 
-  -- soft cool wash so UI panels stay readable
-  love.graphics.setColor(0.04, 0.08, 0.14, 0.28)
+  -- Violet wash keeps the illustrated cave and UI in the same palette.
+  setUiColor("shadow", 0.26)
   love.graphics.rectangle("fill", 0, 0, width, height)
 
   -- ice glow behind cube
-  love.graphics.setColor(0.45, 0.78, 0.95, 0.06 * glowPulse)
+  setUiColor("accent", 0.08 * glowPulse)
   love.graphics.circle("fill", width * 0.24, height * 0.38, height * 0.32)
-  love.graphics.setColor(0.70, 0.90, 1.0, 0.04 * glowPulse)
+  setUiColor("accentBright", 0.05 * glowPulse)
   love.graphics.circle("fill", width * 0.24, height * 0.38, height * 0.16)
 
-  love.graphics.setColor(0, 0, 0, 0.28)
+  setUiColor("shadow", 0.62)
   love.graphics.rectangle("fill", 0, 0, width, 56)
-  love.graphics.setColor(0, 0, 0, 0.35)
+  setUiColor("shadow", 0.72)
   love.graphics.rectangle("fill", 0, height - 64, width, 64)
 end
 
@@ -1291,7 +1313,7 @@ local function drawMenuCube(width, height)
   love.graphics.setBlendMode("alpha")
   love.graphics.setColor(0, 0, 0, 0.28 * fade)
   love.graphics.ellipse("fill", midX, midY + 6, size * 0.20, size * 0.04)
-  love.graphics.setColor(0.25, 0.55, 0.75, 0.12 * fade * glowPulse)
+  setUiColor("accent", 0.16 * fade * glowPulse)
   love.graphics.ellipse("fill", midX, midY, size * 0.15, size * 0.03)
 
   local imageW, imageH = menuCharacter:getDimensions()
@@ -1307,9 +1329,9 @@ local function drawMenuCube(width, height)
   local gx = cx + slideX + size * 0.82
   local gy = cy + bob + size * 0.22
   local pulse = (0.35 + 0.40 * math.sin(elapsed * 2.0)) * fade
-  love.graphics.setColor(0.85, 0.95, 1.0, pulse)
+  setUiColor("text", pulse)
   love.graphics.circle("fill", gx, gy, 1.6)
-  love.graphics.setColor(0.85, 0.95, 1.0, pulse * 0.45)
+  setUiColor("accentBright", pulse * 0.55)
   love.graphics.rectangle("fill", gx - 5, gy - 0.55, 10, 1.1)
   love.graphics.rectangle("fill", gx - 0.55, gy - 5, 1.1, 10)
 end
@@ -1342,13 +1364,13 @@ local function drawMenuItems(width, height)
       drawRowHighlight(rowX, rowY, rowW, rowH, a * pulse)
       local cx = rowX + 16
       local cy = rowY + math.floor(rowH * 0.5)
-      love.graphics.setColor(0.45, 0.78, 1.0, 0.45 * a)
+      setUiColor("selectionBright", 0.72 * a)
       love.graphics.polygon("fill", cx - 2, cy - 10, cx + 14, cy, cx - 2, cy + 10)
       love.graphics.setColor(1, 1, 1, a)
       love.graphics.polygon("fill", cx, cy - 8, cx + 12, cy, cx, cy + 8)
     elseif selected and locked then
       drawRowHighlight(rowX, rowY, rowW, rowH, a * pulse * 0.75)
-      love.graphics.setColor(0.55, 0.72, 0.90, 0.55 * a * pulse)
+      setUiColor("textMuted", 0.65 * a * pulse)
       love.graphics.setLineWidth(2)
       love.graphics.rectangle("line", rowX + 1, rowY + 1, rowW - 2, rowH - 2)
       love.graphics.setLineWidth(1)
@@ -1363,16 +1385,16 @@ local function drawMenuItems(width, height)
     local lx = x + 44
     local ly = rowY + math.floor((rowH - th) * 0.5)
 
-    love.graphics.setColor(0.06, 0.16, 0.30, labelA)
+    setUiColor("shadow", labelA)
     love.graphics.print(item.label, lx + 1, ly + 1)
     if locked then
       if selected then
-        love.graphics.setColor(0.92, 0.96, 1.0, labelA)
+        setUiColor("text", labelA)
       else
-        love.graphics.setColor(0.70, 0.80, 0.90, labelA)
+        setUiColor("textMuted", labelA)
       end
     else
-      love.graphics.setColor(0.95, 0.98, 1.0, labelA)
+      setUiColor("text", labelA)
     end
     love.graphics.print(item.label, lx, ly)
 
@@ -1398,18 +1420,18 @@ local function drawMenuTitle(width, height)
   local a = e * titlePulse
 
   -- soft icy glow
-  love.graphics.setColor(0.55, 0.82, 1.0, 0.18 * a)
+  setUiColor("accent", 0.28 * a)
   love.graphics.print(title, tx - 1, ty)
   love.graphics.print(title, tx + 1, ty)
   love.graphics.print(title, tx, ty - 1)
   love.graphics.print(title, tx, ty + 1)
 
   -- shadow
-  love.graphics.setColor(0.05, 0.14, 0.28, 0.55 * a)
+  setUiColor("shadow", 0.75 * a)
   love.graphics.print(title, tx + 2, ty + 3)
 
   -- fill
-  love.graphics.setColor(0.92, 0.98, 1.0, a)
+  setUiColor("text", a)
   love.graphics.print(title, tx, ty)
 
   -- tiny sparkle
@@ -1418,7 +1440,7 @@ local function drawMenuTitle(width, height)
   local spark = (0.45 + 0.55 * math.sin(elapsed * 4.5)) * a
   love.graphics.setColor(1, 1, 1, spark)
   love.graphics.circle("fill", sx, sy, 2)
-  love.graphics.setColor(0.85, 0.95, 1.0, spark * 0.7)
+  setUiColor("accentBright", spark * 0.8)
   love.graphics.rectangle("fill", sx - 5, sy - 0.6, 10, 1.2)
   love.graphics.rectangle("fill", sx - 0.6, sy - 5, 1.2, 10)
 end
@@ -1441,20 +1463,20 @@ local function drawLevels(width, height)
   local tw = fonts.title:getWidth(t)
   local tx = math.floor((width - tw) * 0.5)
   local ty = math.floor(22 + (1 - e) * 16 + math.sin(elapsed * 1.5) * 2)
-  love.graphics.setColor(0.45, 0.78, 1.0, 0.2 * e * titlePulse)
+  setUiColor("accent", 0.30 * e * titlePulse)
   love.graphics.print(t, tx - 1, ty)
   love.graphics.print(t, tx + 1, ty)
   love.graphics.print(t, tx, ty - 1)
   love.graphics.print(t, tx, ty + 1)
-  love.graphics.setColor(0.05, 0.14, 0.28, 0.65 * e)
+  setUiColor("shadow", 0.78 * e)
   love.graphics.print(t, tx + 2, ty + 3)
-  love.graphics.setColor(0.95, 0.98, 1.0, e * titlePulse)
+  setUiColor("text", e * titlePulse)
   love.graphics.print(t, tx, ty)
 
   if #levelList == 0 then
     love.graphics.setFont(fonts.credits)
     local empty = "No levels yet — try the editor!"
-    love.graphics.setColor(0.78, 0.90, 1.0, 0.85 * e)
+    setUiColor("textMuted", 0.9 * e)
     love.graphics.print(empty, math.floor((width - fonts.credits:getWidth(empty)) * 0.5), height * 0.48)
   else
     local first = levelScroll * CARD_COLS + 1
@@ -1487,17 +1509,17 @@ local function drawLevels(width, height)
 
       if active then
         if locked then
-          love.graphics.setColor(0.55, 0.68, 0.82, 0.55 * a * pulse)
+          setUiColor("textMuted", 0.62 * a * pulse)
           love.graphics.setLineWidth(2)
           love.graphics.rectangle("line", x + 2, cardY + 2, w - 4, h - 4)
           love.graphics.setLineWidth(1)
         else
-          love.graphics.setColor(0.85, 0.96, 1.0, 0.7 * a * pulse)
+          setUiColor("selectionBright", 0.92 * a * pulse)
           love.graphics.setLineWidth(3)
           love.graphics.rectangle("line", x + 2, cardY + 2, w - 4, h - 4)
           love.graphics.setLineWidth(1)
           -- soft glow under selected card
-          love.graphics.setColor(0.45, 0.80, 1.0, 0.12 * a * pulse)
+          setUiColor("selection", 0.25 * a * pulse)
           love.graphics.ellipse("fill", x + w * 0.5, cardY + h + 6, w * 0.42, 10)
         end
       end
@@ -1509,9 +1531,9 @@ local function drawLevels(width, height)
       local prevX = x + PREVIEW_PAD
       local prevY = cardY + PREVIEW_PAD
 
-      love.graphics.setColor(0.05, 0.12, 0.20, a)
+      setUiColor("shadow", a)
       love.graphics.rectangle("fill", prevX - 2, prevY - 2, prevW + 4, prevH + 4)
-      love.graphics.setColor(0.55, 0.78, 0.95, (locked and 0.35 or 0.65) * a)
+      setUiColor("panelHighlight", (locked and 0.45 or 0.85) * a)
       love.graphics.rectangle("line", prevX - 2, prevY - 2, prevW + 4, prevH + 4)
 
       if preview then
@@ -1520,7 +1542,7 @@ local function drawLevels(width, height)
       end
 
       if locked then
-        love.graphics.setColor(0.04, 0.10, 0.18, 0.45 * a)
+        setUiColor("shadow", 0.62 * a)
         love.graphics.rectangle("fill", prevX, prevY, prevW, prevH)
         local lockSize = 18
         drawLockIcon(
@@ -1536,12 +1558,12 @@ local function drawLevels(width, height)
       love.graphics.setFont(labelFont)
       local lx = math.floor(x + (w - labelFont:getWidth(label)) * 0.5)
       local ly = prevY + prevH + 8
-      love.graphics.setColor(0.06, 0.16, 0.30, a)
+      setUiColor("shadow", a)
       love.graphics.print(label, lx + 1, ly + 1)
       if locked then
-        love.graphics.setColor(0.70, 0.80, 0.90, 0.75 * a)
+        setUiColor("textMuted", 0.82 * a)
       else
-        love.graphics.setColor(0.95, 0.98, 1.0, a)
+        setUiColor("text", a)
       end
       love.graphics.print(label, lx, ly)
 
@@ -1554,17 +1576,17 @@ local function drawLevels(width, height)
       local trackX = width - 22
       local trackY = gridY
       local trackH = gridH
-      love.graphics.setColor(0.08, 0.16, 0.28, 0.55 * e)
+      setUiColor("panelOuter", 0.75 * e)
       love.graphics.rectangle("fill", trackX, trackY, 5, trackH, 2, 2)
       local thumbH = math.max(18, trackH * (CARD_ROWS / (maxScroll + CARD_ROWS)))
       local thumbY = trackY + (trackH - thumbH) * (levelScroll / maxScroll)
-      love.graphics.setColor(0.70, 0.88, 1.0, 0.9 * e)
+      setUiColor("selectionBright", 0.95 * e)
       love.graphics.rectangle("fill", trackX, thumbY, 5, thumbH, 2, 2)
     end
   end
 
   love.graphics.setFont(fonts.small)
-  love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
+  setUiColor("textMuted", 0.9 * e)
   local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
@@ -1584,12 +1606,12 @@ local function drawCredits(width, height)
   love.graphics.setFont(fonts.title)
   local t = "Credits"
   local tx = math.floor((width - fonts.title:getWidth(t)) * 0.5)
-  love.graphics.setColor(0.06, 0.16, 0.30, e)
+  setUiColor("shadow", e)
   love.graphics.print(t, tx + 1, py + 16)
-  love.graphics.setColor(0.95, 0.98, 1.0, e)
+  setUiColor("text", e)
   love.graphics.print(t, tx, py + 15)
 
-  love.graphics.setColor(0.20, 0.38, 0.55, 0.5 * e)
+  setUiColor("panelHighlight", 0.65 * e)
   love.graphics.rectangle("fill", px + 28, py + 52, pw - 56, 2)
 
   love.graphics.setFont(fonts.credits)
@@ -1614,7 +1636,7 @@ local function drawCredits(width, height)
     elseif line == "Game Devs:" then
       col = 0.78
     end
-    love.graphics.setColor(0.90, 0.96, 1.0, a * col)
+    setUiColor("text", a * col)
     love.graphics.print(line, math.floor((width - fonts.credits:getWidth(line)) * 0.5), y)
     y = y + 20
   end
@@ -1624,37 +1646,37 @@ end
 
 local function drawToggle(x, y, on, alpha)
   local w, h = 44, 22
-  love.graphics.setColor(0.08, 0.16, 0.28, alpha)
+  setUiColor("shadow", alpha)
   love.graphics.rectangle("fill", x + 1, y + 1, w, h, 11, 11)
   if on then
-    love.graphics.setColor(0.45, 0.78, 1.0, alpha)
+    setUiColor("accent", alpha)
   else
-    love.graphics.setColor(0.28, 0.40, 0.52, alpha)
+    setUiColor("panelHighlight", alpha)
   end
   love.graphics.rectangle("fill", x, y, w, h, 11, 11)
-  love.graphics.setColor(0.85, 0.94, 1.0, 0.35 * alpha)
+  setUiColor("accentBright", 0.42 * alpha)
   love.graphics.rectangle("fill", x + 2, y + 2, w - 4, 3, 2, 2)
   local kx = on and (x + w - 18) or (x + 4)
-  love.graphics.setColor(0.06, 0.14, 0.24, 0.35 * alpha)
+  setUiColor("shadow", 0.5 * alpha)
   love.graphics.circle("fill", kx + 7, y + 12, 8)
-  love.graphics.setColor(0.96, 0.99, 1.0, alpha)
+  setUiColor("text", alpha)
   love.graphics.circle("fill", kx + 7, y + 11, 8)
   return w, h
 end
 
 local function drawSlider(x, y, w, value, alpha)
   local h = 10
-  love.graphics.setColor(0.10, 0.20, 0.32, alpha)
+  setUiColor("panelOuter", alpha)
   love.graphics.rectangle("fill", x, y, w, h, 5, 5)
-  love.graphics.setColor(0.35, 0.55, 0.72, alpha)
+  setUiColor("panelHighlight", alpha)
   love.graphics.rectangle("fill", x + 1, y + 1, w - 2, h - 2, 4, 4)
   local fill = math.floor((w - 2) * clamp(value, 0, 1))
-  love.graphics.setColor(0.55, 0.82, 1.0, alpha)
+  setUiColor("accent", alpha)
   love.graphics.rectangle("fill", x + 1, y + 1, fill, h - 2, 4, 4)
   local kx = x + 1 + fill
-  love.graphics.setColor(0.06, 0.14, 0.24, 0.4 * alpha)
+  setUiColor("shadow", 0.55 * alpha)
   love.graphics.circle("fill", kx, y + h * 0.5 + 1, 8)
-  love.graphics.setColor(0.95, 0.98, 1.0, alpha)
+  setUiColor("text", alpha)
   love.graphics.circle("fill", kx, y + h * 0.5, 8)
   return w, h
 end
@@ -1690,12 +1712,12 @@ local function drawSettings(width, height)
   love.graphics.setFont(fonts.title)
   local t = "Settings"
   local tx = math.floor((width - fonts.title:getWidth(t)) * 0.5)
-  love.graphics.setColor(0.06, 0.16, 0.30, e)
+  setUiColor("shadow", e)
   love.graphics.print(t, tx + 1, py + 16)
-  love.graphics.setColor(0.95, 0.98, 1.0, e)
+  setUiColor("text", e)
   love.graphics.print(t, tx, py + 15)
 
-  love.graphics.setColor(0.20, 0.38, 0.55, 0.5 * e)
+  setUiColor("panelHighlight", 0.65 * e)
   love.graphics.rectangle("fill", px + 28, py + 52, pw - 56, 2)
 
   settingsHover = settingsItemHit(mouseX, mouseY, width, height)
@@ -1715,9 +1737,9 @@ local function drawSettings(width, height)
 
     love.graphics.setFont(fonts.menu)
     local ly = y + math.floor((rowH - 8 - fonts.menu:getHeight()) * 0.5)
-    love.graphics.setColor(0.06, 0.16, 0.30, e)
+    setUiColor("shadow", e)
     love.graphics.print(item.label, px + 29, ly + 1)
-    love.graphics.setColor(0.95, 0.98, 1.0, e)
+    setUiColor("text", e)
     love.graphics.print(item.label, px + 28, ly)
 
     if item.kind == "toggle" then
@@ -1729,7 +1751,7 @@ local function drawSettings(width, height)
   end
 
   love.graphics.setFont(fonts.small)
-  love.graphics.setColor(0.75, 0.88, 1.0, 0.7 * e)
+  setUiColor("textMuted", 0.85 * e)
   local tip = "Esc to return"
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), py + ph - 28)
 
