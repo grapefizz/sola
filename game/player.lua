@@ -3,11 +3,12 @@ Player.__index = Player
 
 local Perspective = require "game.perspective"
 
-local MOVE_DURATION = 0.14
+local MOVE_DURATION = 0.30
 local ICE_MOVE_DURATION = MOVE_DURATION / 1.25
 local SMASH_SPEED_FACTOR = 1.05
 local PLAYER_FRAME_SIZE = 128
 local PLAYER_FRAME_DURATION = 1 / 12
+local PLAYER_MOVE_ANIMATION_DURATION = 0.65
 local MELT_TIME = 40
 
 local PLAYER_SHEET_PATHS = {
@@ -23,7 +24,43 @@ local PLAYER_FRAME_COUNTS = {
   up = 26,
   side = 25,
 }
+
+local PLAYER_MOVE_FRAME_RANGES = {
+  down = { first = 14, last = 25 },
+  up = { first = 14, last = 25 },
+  side = { first = 10, last = 25 },
+}
 local playerAnimations = {}
+
+local function cubicBezierCoordinate(t, firstControl, secondControl)
+  local inverse = 1 - t
+  return 3 * inverse * inverse * t * firstControl
+    + 3 * inverse * t * t * secondControl
+    + t * t * t
+end
+
+-- CSS-style cubic-bezier(1, 0, 0.30, 1). The x component represents
+-- elapsed time, so solve it before sampling the curve's y component.
+local function easeMovement(progress)
+  if progress <= 0 then
+    return 0
+  elseif progress >= 1 then
+    return 1
+  end
+
+  local low, high = 0, 1
+  for _ = 1, 14 do
+    local parameter = (low + high) * 0.5
+    local x = cubicBezierCoordinate(parameter, 1, 0.30)
+    if x < progress then
+      low = parameter
+    else
+      high = parameter
+    end
+  end
+
+  return cubicBezierCoordinate((low + high) * 0.5, 0, 1)
+end
 
 local function getPlayerAnimation(key)
   local cached = playerAnimations[key]
@@ -59,19 +96,21 @@ local function pickPlayerAnimation(mode, facingDx, facingDy, isMoving)
   if mode == "side" then
     return "side", facingDx < 0
   end
+  -- Horizontal movement wins if both components are ever present, preventing
+  -- a stale vertical facing value from selecting the up/down animation.
+  if facingDx ~= 0 then
+    return "side", facingDx < 0
+  end
   if facingDy < 0 then
     return "up", false
   end
   if facingDy > 0 then
     return "down", false
   end
-  if facingDx ~= 0 then
-    return "side", facingDx < 0
-  end
   return "down", false
 end
 
-function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving)
+function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving, movementProgress)
   time = time or ((love.timer and love.timer.getTime()) or 0)
   mode = mode or Perspective.mode
   facingDx = facingDx or 0
@@ -82,7 +121,20 @@ function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving)
 
   local key, flip = pickPlayerAnimation(mode, facingDx, facingDy, isMoving)
   local animation = getPlayerAnimation(key)
-  local frameIndex = math.floor(time / PLAYER_FRAME_DURATION) % animation.frameCount + 1
+  local frameIndex
+  if isMoving and movementProgress ~= nil then
+    movementProgress = math.max(0, math.min(1, movementProgress))
+    local range = PLAYER_MOVE_FRAME_RANGES[key]
+    local firstFrame = range and range.first or 1
+    local lastFrame = math.min(range and range.last or animation.frameCount, animation.frameCount)
+    local frameCount = lastFrame - firstFrame + 1
+    frameIndex = firstFrame + math.min(
+      frameCount - 1,
+      math.floor(movementProgress * frameCount)
+    )
+  else
+    frameIndex = math.floor(time / PLAYER_FRAME_DURATION) % animation.frameCount + 1
+  end
   local mirror = flip and -1 or 1
 
   if mode == "side" then
@@ -154,10 +206,10 @@ function Player.new(col, row, timeLimit)
     row = row,
     timeRemaining = timeLimit,
     maxTime = timeLimit,
-    startSize = 42,
+    startSize = 43.5,
     dead = false,
     won = false,
-    heldItem = nil, 
+    heldItem = nil,
     facingDx = 0,
     facingDy = -1,
     jumpFacingDx = 1,
@@ -173,12 +225,35 @@ function Player.new(col, row, timeLimit)
       deadly = false,
       jumping = false,
     },
+    moveAnimation = {
+      active = false,
+      elapsed = 0,
+      duration = PLAYER_MOVE_ANIMATION_DURATION,
+      facingDx = 0,
+      facingDy = -1,
+      sizeOffset = 0,
+    },
     slide = {
       active = false,
       dx = 0,
       dy = 0,
     },
   }, Player)
+end
+
+function Player:startMoveAnimation(timeCost)
+  local animation = self.moveAnimation
+  local remainingSizeOffset = 0
+  if animation.active and animation.duration > 0 then
+    local progress = math.min(1, animation.elapsed / animation.duration)
+    remainingSizeOffset = animation.sizeOffset * (1 - progress)
+  end
+
+  animation.active = true
+  animation.elapsed = 0
+  animation.facingDx = self.facingDx
+  animation.facingDy = self.facingDy
+  animation.sizeOffset = remainingSizeOffset + (timeCost or 0)
 end
 
 function Player:stopSlide()
@@ -334,6 +409,12 @@ function Player:beginStep(grid, col, row, deadly, jumping)
   movement.deadly = deadly
   movement.jumping = jumping and true or false
 
+  -- A slide is one continuous action, so automatic ice steps do not restart
+  -- the directional animation on every tile.
+  if not self.slide.active or timeCost ~= 0 then
+    self:startMoveAnimation(timeCost)
+  end
+
   self.col = col
   self.row = row
 end
@@ -372,7 +453,7 @@ function Player:tryJump(grid)
   local landCol, landRow, deadly
   for _, candidate in ipairs(candidates) do
     if candidate.needArc and not self:canJumpOver(grid, overCol, self.row - 1) then
-    
+
     else
       local ok, col, row, tileDeadly = self:canJumpLand(grid, candidate.col, candidate.row)
       if ok then
@@ -434,6 +515,18 @@ function Player:continueSlide(grid)
 end
 
 function Player:update(dt, grid)
+  local moveAnimation = self.moveAnimation
+  if moveAnimation.active then
+    moveAnimation.elapsed = math.min(
+      moveAnimation.elapsed + dt,
+      moveAnimation.duration
+    )
+    if moveAnimation.elapsed >= moveAnimation.duration then
+      moveAnimation.active = false
+      moveAnimation.sizeOffset = 0
+    end
+  end
+
   grid:updatePressurePlates(self.col, self.row, self:sizeRatio())
   if not self.dead and not self.won and self.timeRemaining > 0 then
     self.timeRemaining = math.max(0, self.timeRemaining - dt)
@@ -544,13 +637,22 @@ function Player:getDrawState()
   end
 
 
-  local easedProgress = progress * progress * (3 - 2 * progress)
+  local easedProgress = easeMovement(progress)
   local displayedTime = self.timeRemaining
   local col, row = self.col, self.row
   if movement.active then
-    displayedTime = displayedTime + movement.timeCost * (1 - easedProgress)
     col = movement.fromCol + (movement.toCol - movement.fromCol) * easedProgress
     row = movement.fromRow + (movement.toRow - movement.fromRow) * easedProgress
+  end
+
+  local moveAnimation = self.moveAnimation
+  if moveAnimation.active and moveAnimation.duration > 0 then
+    local animationProgress = math.min(
+      1,
+      moveAnimation.elapsed / moveAnimation.duration
+    )
+    displayedTime = displayedTime
+      + moveAnimation.sizeOffset * (1 - animationProgress)
   end
 
   local hop = 0
@@ -586,9 +688,26 @@ function Player:draw(grid, camera)
   local x, y = camera:worldToScreen(worldX, worldY)
   local screenSize = size * camera.zoom
 
-  local facingDx = (mode == "side") and self.jumpFacingDx or self.facingDx
-  local isMoving = self.movement.active or self.slide.active
-  Player.drawSprite(x, y, screenSize, nil, mode, facingDx, self.facingDy, isMoving)
+  local moveAnimation = self.moveAnimation
+  local isMoving = moveAnimation.active
+  local facingDx = isMoving and moveAnimation.facingDx
+    or ((mode == "side") and self.jumpFacingDx or self.facingDx)
+  local facingDy = isMoving and moveAnimation.facingDy or self.facingDy
+  local movementProgress = 0
+  if isMoving and moveAnimation.duration > 0 then
+    movementProgress = moveAnimation.elapsed / moveAnimation.duration
+  end
+  Player.drawSprite(
+    x,
+    y,
+    screenSize,
+    nil,
+    mode,
+    facingDx,
+    facingDy,
+    isMoving,
+    movementProgress
+  )
 
   if self.heldItem == "puzzle_piece" then
     local pieceSize = math.max(10, screenSize * 0.55)

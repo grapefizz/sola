@@ -1,9 +1,8 @@
 --[[
   Ice Cube — LÖVE 11.5
-  Main menu: atmospheric layout + rotating 3D ice block (from ice_block.glb).
+  Main menu: atmospheric layout + illustrated title character.
 ]]
 
-local g3d = require "g3d"
 local Camera = require "game.camera"
 local Editor = require "game.editor"
 local Grid = require "game.grid"
@@ -87,25 +86,10 @@ local function refreshCardMetrics(width, height)
   CARD_H = prevH + PREVIEW_PAD * 2 + labelStrip
 end
 
-local iceModel
-local iceTex
-local iceTexBlush
-local iceShader
-local cubeCanvas
-local cubeCanvasSize = 0
+local menuCharacter
 local menuBg
 local menuBgW, menuBgH = 1, 1
--- gentle left↔right yaw; face always stays on-camera
-local angleBase = 0.35
-local angleSwing = 0.55
-local swayPhase = 0
-local swaySpeed = 0.85
-local cubeAngle = angleBase
-local pressingCube = false
-local blush = 0
-local blushTimer = 0
 local bobAmount = 0
-local usingBlushTex = false
 local intro = 0
 local menuSlide = {0, 0, 0, 0, 0}
 local titlePulse = 0
@@ -600,14 +584,6 @@ local function drawSnow()
   end
 end
 
-local function ensureCubeCanvas(size)
-  if cubeCanvas and cubeCanvasSize == size then
-    return
-  end
-  cubeCanvasSize = size
-  cubeCanvas = love.graphics.newCanvas(size, size)
-end
-
 local cubeViewSize, cubeScreenRect, cubeHit
 
 local function loadPixelFont(path, size)
@@ -661,7 +637,7 @@ function love.load()
   fonts.credits = loadPixelFont(pixel, 18)
   fonts.tag = loadPixelFont(pixel, 14)
 
-  menuBg = love.graphics.newImage("assets/background/night_forest.jpg")
+  menuBg = love.graphics.newImage("assets/background/startbg.png")
   menuBg:setFilter("linear", "linear")
   menuBgW, menuBgH = menuBg:getDimensions()
 
@@ -695,34 +671,19 @@ function love.load()
   applyAudioVolumes()
   if musicSrc then musicSrc:play() end
 
-  local verts = g3d.loadObj("assets/ice_block.obj", false, false)
-  iceTex = love.graphics.newImage("assets/ice_albedo.png")
-  iceTex:setFilter("linear", "linear")
-  iceTexBlush = love.graphics.newImage("assets/ice_albedo_blush.png")
-  iceTexBlush:setFilter("linear", "linear")
-  iceModel = g3d.newModel(verts, iceTex, {0, 0, 0}, {0.12, 0, 0.35}, 0.88)
-  iceShader = love.graphics.newShader("assets/ice.frag", "g3d/g3d.vert")
-  iceShader:send("iceAlpha", 0.78)
-  iceShader:send("iceTint", {0.88, 0.95, 1.0})
-
-  g3d.camera.fov = math.rad(30)
-  g3d.camera.nearClip = 0.1
-  g3d.camera.farClip = 100
-  g3d.camera.aspectRatio = 1
-  g3d.camera.updateProjectionMatrix()
+  menuCharacter = love.graphics.newImage("assets/background/icetncube.png")
+  menuCharacter:setFilter("linear", "linear")
 
   love.graphics.setDepthMode("always", false)
 
   local w, h = love.graphics.getDimensions()
   makeSnow(w, h)
-  ensureCubeCanvas(cubeViewSize(w, h))
   intro = 0
   loadProgress()
 end
 
 function love.resize(w, h)
   makeSnow(w, h)
-  ensureCubeCanvas(cubeViewSize(w, h))
   if state == "levels" then
     refreshLevelList()
   else
@@ -783,7 +744,8 @@ cubeScreenRect = function(width, height)
   local blockTop = by - titleH - 18
   local blockH = (by + ph) - blockTop
   local gap = 18
-  local x = menuX - size - gap
+  local leftShift = math.floor(math.min(64, width * 0.06))
+  local x = menuX - size - gap - leftShift
   local y = blockTop + (blockH - size) * 0.52
   return x, y, size
 end
@@ -1192,33 +1154,7 @@ local function updateLevelsScreen(dt, width, height)
 end
 
 local function updateMenuScreen(dt, width, height)
-  swayPhase = swayPhase + dt * swaySpeed
-  cubeAngle = angleBase + math.sin(swayPhase) * angleSwing
-  iceModel:setRotation(0.12, 0, cubeAngle)
   bobAmount = math.sin(elapsed * 0.95) * 3.2
-
-  if blushTimer > 0 then
-    blushTimer = blushTimer - dt
-    if blushTimer > 1.0 then
-      blush = 1
-    else
-      blush = clamp(blushTimer / 1.0, 0, 1)
-    end
-    if blushTimer <= 0 then
-      blush = 0
-    end
-  elseif pressingCube then
-    blush = math.min(1, blush + dt * 0.8)
-  elseif blush > 0 then
-    blush = math.max(0, blush - dt * 0.45)
-  end
-
-  local wantBlush = blush > 0.2
-  if wantBlush ~= usingBlushTex then
-    usingBlushTex = wantBlush
-    iceModel.mesh:setTexture(wantBlush and iceTexBlush or iceTex)
-    iceModel.texture = wantBlush and iceTexBlush or iceTex
-  end
 
   local hit = menuItemHit(mouseX, mouseY, width, height)
   if hit > 0 then
@@ -1312,7 +1248,7 @@ function love.update(dt)
 end
 
 local function drawAtmosphere(width, height)
-  -- cover-scale seamless night forest (tile horizontally if needed)
+  -- Cover-scale and scroll the background horizontally.
   local scale = math.max(width / menuBgW, height / menuBgH)
   local drawH = menuBgH * scale
   local tileW = menuBgW * scale
@@ -1344,37 +1280,12 @@ end
 
 local function drawMenuCube(width, height)
   local cx, cy, size = cubeScreenRect(width, height)
-  ensureCubeCanvas(size)
-
   local e = easeOutCubic(intro)
   local slideX = (1 - e) * -40
   local fade = e
-
-  love.graphics.setCanvas({cubeCanvas, depth = true})
-  love.graphics.clear(0, 0, 0, 0)
-  love.graphics.setDepthMode("lequal", true)
-  love.graphics.setBlendMode("alpha", "alphamultiply")
-  love.graphics.setColor(1, 1, 1, 1)
-
-  g3d.camera.aspectRatio = 1
-  g3d.camera.fov = math.rad(30)
-  g3d.camera.updateProjectionMatrix()
-  g3d.camera.lookAt(3.8, -5.2, 0.95, 0, 0, 0.3)
-
-  iceShader:send("iceAlpha", 0.82 + blush * 0.04)
-  iceShader:send("iceTint", {
-    0.90 + blush * 0.05,
-    0.94 - blush * 0.03,
-    1.0 - blush * 0.05,
-  })
-  iceModel:draw(iceShader)
-
-  love.graphics.setCanvas()
-  love.graphics.setDepthMode("always", false)
-
   local bob = bobAmount
   local midX = cx + size * 0.50 + slideX
-  local midY = cy + bob + size * 0.72
+  local midY = cy + bob + size * 0.92
 
   -- soft pool shadow
   love.graphics.setBlendMode("alpha")
@@ -1383,14 +1294,18 @@ local function drawMenuCube(width, height)
   love.graphics.setColor(0.25, 0.55, 0.75, 0.12 * fade * glowPulse)
   love.graphics.ellipse("fill", midX, midY, size * 0.15, size * 0.03)
 
-  -- premultiplied cube blit so glass edges stay clean
-  love.graphics.setBlendMode("alpha", "premultiplied")
-  love.graphics.setColor(fade, fade, fade, fade)
-  love.graphics.draw(cubeCanvas, cx + slideX, cy + bob)
-  love.graphics.setBlendMode("alpha")
+  local imageW, imageH = menuCharacter:getDimensions()
+  local scale = math.min(size / imageW, size / imageH)
+  local drawW = imageW * scale
+  local drawH = imageH * scale
+  local drawX = cx + (size - drawW) * 0.5 + slideX
+  local drawY = cy + (size - drawH) * 0.5 + bob
 
-  local gx = cx + slideX + size * 0.55
-  local gy = cy + bob + size * 0.32
+  love.graphics.setColor(1, 1, 1, fade)
+  love.graphics.draw(menuCharacter, drawX, drawY, 0, scale, scale)
+
+  local gx = cx + slideX + size * 0.82
+  local gy = cy + bob + size * 0.22
   local pulse = (0.35 + 0.40 * math.sin(elapsed * 2.0)) * fade
   love.graphics.setColor(0.85, 0.95, 1.0, pulse)
   love.graphics.circle("fill", gx, gy, 1.6)
@@ -2091,9 +2006,6 @@ function love.mousepressed(x, y, button)
       return
     end
     if cubeHit(x, y, width, height) then
-      pressingCube = true
-      blush = 1
-      blushTimer = 5.0
       playSfx(sfxToggle)
       bumpShake(5, 0.22)
     end
@@ -2136,9 +2048,6 @@ end
 function love.mousereleased(x, y, button)
   if state == "play" and editor and editor.active then
     editor:mousereleased(x, y, button, grid, camera)
-  end
-  if button == 1 then
-    pressingCube = false
   end
 end
 
