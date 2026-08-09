@@ -169,6 +169,11 @@ local shakeMag = 0
 local shakeX, shakeY = 0, 0
 local sfxClick
 local sfxToggle
+local sfxFireBurn
+local sfxFireNear
+local sfxButton
+local sfxBreak
+local sfxSnowflake
 local musicSrc
 local musicVol = 0.55
 local sfxVol = 0.8
@@ -726,6 +731,45 @@ local function playSfx(src)
   s:play()
 end
 
+local function loadSfx(candidates)
+  for _, path in ipairs(candidates) do
+    if love.filesystem.getInfo(path) then
+      return love.audio.newSource(path, "static")
+    end
+  end
+  return nil
+end
+
+local function countTiles(tiles)
+  local count = 0
+  for _ in pairs(tiles or {}) do
+    count = count + 1
+  end
+  return count
+end
+
+local function wallBreakState(tiles)
+  local state = {}
+  for key, wall in pairs(tiles or {}) do
+    state[key] = {
+      texture = wall.texture,
+      cracked = wall.cracked,
+    }
+  end
+  return state
+end
+
+local function wallWasBroken(before, after)
+  for key, oldWall in pairs(before) do
+    local newWall = after[key]
+    if not newWall or newWall.texture ~= oldWall.texture
+      or newWall.cracked ~= oldWall.cracked then
+      return true
+    end
+  end
+  return false
+end
+
 local function applyAudioVolumes()
   musicVol = getSetting("music") or 0
   sfxVol = getSetting("sfx") or 0
@@ -991,6 +1035,21 @@ function love.load()
 
   sfxClick = makeTone(720, 0.05, 0.35, 180)
   sfxToggle = makeTone(520, 0.07, 0.3, -120)
+  sfxFireBurn = loadSfx({
+    "assets/sounds/fire_burn.wav"
+  })
+  sfxFireNear = loadSfx({
+    "assets/sounds/fire_near.wav"
+  })
+  sfxButton = loadSfx({
+    "assets/sounds/button.wav"
+  })
+  sfxBreak = loadSfx({
+    "assets/sounds/break.wav"
+  })
+  sfxSnowflake = loadSfx({
+    "assets/sounds/snowflake.wav"
+  })
   musicSrc = makeMusicLoop()
 
   setSetting("fullscreen", love.window.getFullscreen())
@@ -1635,7 +1694,49 @@ local function updatePlayScreen(dt, width, height)
   end
 
   if playOverlay ~= "pause" and not endingCutscene then
+  if playOverlay ~= "pause" then
+    local beforeCol, beforeRow = player.col, player.row
+    local wasNearFire = grid:isInFireZone(beforeCol, beforeRow)
+    local wasSnowflake = grid:isSnowflakeTile(beforeCol, beforeRow)
+    local wasDead = player.dead
+    local wallStateBefore = wallBreakState(grid.wallTiles)
+    local boulderCountBefore = countTiles(grid.boulderTiles)
+    local buttonStateBefore = false
+    for _, plate in pairs(grid.pressurePlateTiles or {}) do
+      if plate.pressed then
+        buttonStateBefore = true
+        break
+      end
+    end
+
     player:update(dt, grid)
+
+    local afterCol, afterRow = player.col, player.row
+    local isNearFire = grid:isInFireZone(afterCol, afterRow)
+    if isNearFire and not wasNearFire then
+      playSfx(sfxFireNear)
+    end
+    if player.dead and not wasDead then
+      playSfx(sfxFireBurn)
+    end
+    if wasSnowflake and not grid:isSnowflakeTile(afterCol, afterRow) then
+      playSfx(sfxSnowflake)
+    end
+    local buttonStateAfter = false
+    for _, plate in pairs(grid.pressurePlateTiles or {}) do
+      if plate.pressed then
+        buttonStateAfter = true
+        break
+      end
+    end
+    if buttonStateAfter and not buttonStateBefore then
+      playSfx(sfxButton)
+    end
+    if wallWasBroken(wallStateBefore, grid.wallTiles)
+      or countTiles(grid.boulderTiles) < boulderCountBefore then
+      playSfx(sfxBreak)
+    end
+
     if player.inFridge and beginFridgeTransition() then
       return
     end
