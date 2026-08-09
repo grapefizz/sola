@@ -36,6 +36,7 @@ local TOOLS = {
   { name = "ice", label = "Ice Floor", icon = "tile" },
   { name = "snowflake", label = "Snowflake", icon = "tile" },
   { name = "tea", label = "Iced Tea Goal", icon = "tile" },
+  { name = "fridge", label = "Level Fridge", icon = "tile" },
   { name = "puzzle_piece", label = "Key Half", icon = "tile" },
   { name = "pressure_plate", label = "Pressure Plate", icon = "tile" },
   { name = "pressure_door", label = "Pressure Door", icon = "pressure_door" },
@@ -257,6 +258,22 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
       cx + 7 * zoom, cy + 13 * zoom,
       cx - 7 * zoom, cy + 13 * zoom
     )
+  elseif tool == "fridge" then
+    local fw = size * 0.72
+    local fh = size * 0.92
+    local fx = cx - fw * 0.5
+    local fy = cy - fh * 0.5
+    local radius = math.max(2, size * 0.07)
+    withAlpha(0.72, 0.90, 0.98, 1, alpha)
+    love.graphics.rectangle("fill", fx, fy, fw, fh, radius, radius)
+    withAlpha(0.40, 0.67, 0.86, 1, alpha)
+    love.graphics.rectangle("fill", fx + fw * 0.08, fy + fh * 0.08, fw * 0.84, fh * 0.84, radius * 0.65, radius * 0.65)
+    withAlpha(0.08, 0.13, 0.27, 1, alpha)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", fx, fy, fw, fh, radius, radius)
+    love.graphics.line(fx + fw * 0.08, fy + fh * 0.34, fx + fw * 0.92, fy + fh * 0.34)
+    love.graphics.rectangle("fill", fx + fw * 0.76, fy + fh * 0.44, fw * 0.07, fh * 0.31, 2, 2)
+    love.graphics.setLineWidth(1)
   elseif tool == "puzzle_piece" then
     local sideView = Perspective.isSide()
     local img = getKeyPiecePreview(sprites, keyVariant, sideView)
@@ -374,6 +391,14 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     and tool ~= "erase"
     and tool ~= "perspective"
   wallDepth = wallDepth or "front"
+  if tool ~= "fridge"
+      and tool ~= "ground"
+      and tool ~= "ice"
+      and tool ~= "moss"
+      and tool ~= "erase"
+      and tool ~= "perspective" then
+    grid:removeFridge(col, row)
+  end
   if tool == "ground" then
     grid:setGround(col, row)
     grid:removeFire(col, row)
@@ -381,6 +406,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:removeMoss(col, row)
     grid:removeSnowflake(col, row)
     grid:removeTea(col, row)
+    grid:removeFridge(col, row)
     grid:removePuzzlePiece(col, row)
     grid:removePuzzleCanvas(col, row)
     grid:removePuzzleDoor(col, row)
@@ -398,6 +424,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addSnowflake(col, row, snowflakeSeconds or DEFAULT_SNOWFLAKE_SECONDS)
   elseif tool == "tea" then
     grid:addTea(col, row)
+  elseif tool == "fridge" then
+    grid:addFridge(col, row)
   elseif tool == "puzzle_piece" then
     grid:addPuzzlePiece(col, row, keyVariant == "down" and "down" or "top")
   elseif tool == "pressure_plate" then
@@ -1028,6 +1056,7 @@ function Editor:protectSpawn(grid)
   grid:removePressurePlate(self.spawnCol, self.spawnRow)
   grid:removeWall(self.spawnCol, self.spawnRow)
   grid:removeBoulder(self.spawnCol, self.spawnRow)
+  grid:addFridge(self.spawnCol, self.spawnRow)
 end
 
 function Editor:beginSave()

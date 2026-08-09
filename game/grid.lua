@@ -152,12 +152,15 @@ function Grid.new(size, columns, rows, fillGround)
     size = size,
     columns = columns,
     rows = rows,
+    spawnCol = math.ceil(columns / 2),
+    spawnRow = math.ceil(rows / 2),
     groundTiles = {},
     fireTiles = {},
     iceTiles = {},
     mossTiles = {},
     snowflakeTiles = {},
     teaTiles = {},
+    fridgeTiles = {},
     puzzlePieceTiles = {}, -- key halves on the ground
     puzzleDoorTiles = {}, -- key doors (opened with a full key)
     finalDoorTiles = {}, -- end-of-level door (walk in to finish)
@@ -187,6 +190,10 @@ end
 
 function Grid:key(col, row)
   return col .. "," .. row
+end
+
+function Grid:isSpawnTile(col, row)
+  return col == self.spawnCol and row == self.spawnRow
 end
 
 
@@ -243,6 +250,7 @@ function Grid:occupiedBounds(padding)
   consider(self.mossTiles)
   consider(self.snowflakeTiles)
   consider(self.teaTiles)
+  consider(self.fridgeTiles)
   consider(self.puzzlePieceTiles)
   consider(self.puzzleDoorTiles)
   consider(self.finalDoorTiles)
@@ -321,6 +329,7 @@ function Grid:erase(col, row)
     { self.fireTiles, "fire" },
     { self.snowflakeTiles, "snowflake" },
     { self.teaTiles, "tea" },
+    { self.fridgeTiles, "fridge" },
     { self.puzzlePieceTiles, "puzzle_piece" },
     { self.puzzleDoorTiles, "puzzle_door" },
     { self.finalDoorTiles, "final_door" },
@@ -362,6 +371,7 @@ function Grid:clear()
   self.mossTiles = {}
   self.snowflakeTiles = {}
   self.teaTiles = {}
+  self.fridgeTiles = {}
   self.puzzlePieceTiles = {}
   self.puzzleDoorTiles = {}
   self.finalDoorTiles = {}
@@ -583,6 +593,44 @@ end
 
 function Grid:isTeaTile(col, row)
   return self.teaTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:addFridge(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.fireTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
+  self.pressurePlateTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
+  self.fridgeTiles[key] = { col = col, row = row }
+end
+
+function Grid:removeFridge(col, row)
+  self.fridgeTiles[self:key(col, row)] = nil
+end
+
+function Grid:isFridgeTile(col, row)
+  return self.fridgeTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:getFirstFridge()
+  local first
+  for _, fridge in pairs(self.fridgeTiles) do
+    if not first
+      or fridge.row < first.row
+      or (fridge.row == first.row and fridge.col < first.col) then
+      first = fridge
+    end
+  end
+  return first
 end
 
 -- Key half on the ground (serialized as J/q = top, M/m = down).
@@ -1357,6 +1405,15 @@ function Grid:serialize()
     output = output .. "\n@snowflakes\n" .. table.concat(snowflakeTimes, "\n")
   end
 
+  local fridges = {}
+  for _, fridge in pairs(self.fridgeTiles) do
+    fridges[#fridges + 1] = fridge.col .. "," .. fridge.row
+  end
+  table.sort(fridges)
+  if #fridges > 0 then
+    output = output .. "\n@fridges\n" .. table.concat(fridges, "\n")
+  end
+
   local emptyUnderlays = {}
   local function recordEmpty(tiles)
     for _, tile in pairs(tiles) do
@@ -1370,6 +1427,7 @@ function Grid:serialize()
   recordEmpty(self.fireTiles)
   recordEmpty(self.snowflakeTiles)
   recordEmpty(self.teaTiles)
+  recordEmpty(self.fridgeTiles)
   recordEmpty(self.puzzlePieceTiles)
   recordEmpty(self.puzzleDoorTiles)
   recordEmpty(self.finalDoorTiles)
@@ -1395,6 +1453,12 @@ function Grid:load(serialized)
   local withoutEmpty, emptyUnderlaysPart = serialized:match("^(.-)\r?\n@emptyunderlays\r?\n(.*)$")
   if withoutEmpty then
     serialized = withoutEmpty
+  end
+  local fridgesPart
+  local withoutFridges, fridgesBody = serialized:match("^(.-)\r?\n@fridges\r?\n(.*)$")
+  if withoutFridges then
+    serialized = withoutFridges
+    fridgesPart = fridgesBody
   end
   local snowflakesPart
   local withoutSnowflakes, snowflakesBody = serialized:match("^(.-)\r?\n@snowflakes\r?\n(.*)$")
@@ -1631,6 +1695,16 @@ function Grid:load(serialized)
     end
   end
 
+  if fridgesPart then
+    for line in fridgesPart:gmatch("[^\r\n]+") do
+      local col, row = line:match("^(%d+),(%d+)$")
+      col, row = tonumber(col), tonumber(row)
+      if col and row and self:isInside(col, row) then
+        self:addFridge(col, row)
+      end
+    end
+  end
+
   if emptyUnderlaysPart then
     for line in emptyUnderlaysPart:gmatch("[^\r\n]+") do
       local col, row = line:match("^(%d+),(%d+)$")
@@ -1687,6 +1761,30 @@ local function drawTeaCup(centerX, centerY, zoom, side)
   love.graphics.setColor(0.95, 0.35, 0.34)
   love.graphics.setLineWidth(2 / zoom)
   love.graphics.line(centerX + 4, centerY - 8, centerX + 10, centerY - 20)
+end
+
+local function drawFridge(centerX, centerY, size, zoom, side)
+  local width = size * 0.72
+  local height = size * 0.92
+  local x = centerX - width * 0.5
+  local y = side and (centerY - height) or (centerY - height * 0.5)
+  local radius = math.max(2, size * 0.07)
+
+  love.graphics.setColor(0.06, 0.10, 0.20, 0.72)
+  love.graphics.rectangle("fill", x + size * 0.05, y + size * 0.06, width, height, radius, radius)
+  love.graphics.setColor(0.72, 0.90, 0.98, 1)
+  love.graphics.rectangle("fill", x, y, width, height, radius, radius)
+  love.graphics.setColor(0.40, 0.67, 0.86, 1)
+  love.graphics.rectangle("fill", x + width * 0.08, y + height * 0.08, width * 0.84, height * 0.84, radius * 0.65, radius * 0.65)
+  love.graphics.setColor(0.08, 0.13, 0.27, 1)
+  love.graphics.setLineWidth(math.max(1, 2 / zoom))
+  love.graphics.rectangle("line", x, y, width, height, radius, radius)
+  love.graphics.line(x + width * 0.08, y + height * 0.34, x + width * 0.92, y + height * 0.34)
+  love.graphics.setColor(0.88, 0.97, 1, 0.95)
+  love.graphics.rectangle("fill", x + width * 0.16, y + height * 0.09, width * 0.10, height * 0.18, 1, 1)
+  love.graphics.setColor(0.08, 0.13, 0.27, 0.92)
+  love.graphics.rectangle("fill", x + width * 0.76, y + height * 0.44, width * 0.07, height * 0.31, 2, 2)
+  love.graphics.setLineWidth(1)
 end
 
 -- One key split into sections: "top" = bow half, "down" = bit half, full = whole.
@@ -2195,6 +2293,14 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     if isVisible(tea) and include(tea.col, tea.row) then
       local centerX, centerY = self:tileCenter(tea.col, tea.row)
       drawTeaCup(centerX, centerY, zoom, false)
+    end
+  end
+
+
+  for _, fridge in pairs(self.fridgeTiles) do
+    if isVisible(fridge) and include(fridge.col, fridge.row) then
+      local centerX, centerY = self:tileCenter(fridge.col, fridge.row)
+      drawFridge(centerX, centerY, self.size, zoom, false)
     end
   end
 
@@ -2708,6 +2814,10 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       if self.teaTiles[key] then
         drawTeaCup(centerX, floorTop, zoom, true)
        end
+
+      if self.fridgeTiles[key] then
+        drawFridge(centerX, floorTop, size, zoom, true)
+      end
 
       if self.puzzlePieceTiles[key] then
         local piece = self.puzzlePieceTiles[key]
