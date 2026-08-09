@@ -25,6 +25,7 @@ local LEGEND_H = 132
 -- and its left-panel icon is snapshotted automatically.
 local TOOLS = {
   { name = "ground", label = "Ground", icon = "tile" },
+  { name = "moss", label = "Moss Block", icon = "tile" },
   { name = "fire", label = "Campfire", icon = "tile" },
   { name = "ice", label = "Ice Floor", icon = "tile" },
   { name = "snowflake", label = "Snowflake", icon = "tile" },
@@ -72,6 +73,8 @@ local function getPreviewSprites()
   previewSprites = {
     ground = love.graphics.newImage("assets/floor.png"),
     ice = love.graphics.newImage("assets/ice.png"),
+    moss = love.graphics.newImage("assets/moss.png"),
+    mossSide = love.graphics.newImage("assets/moss-side.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
     fire = love.graphics.newImage("assets/fire.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
@@ -116,6 +119,17 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
       0,
       size / sprites.ground:getWidth(),
       size / sprites.ground:getHeight()
+    )
+  elseif tool == "moss" then
+    local img = Perspective.isSide() and sprites.mossSide or sprites.moss
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(
+      img,
+      x,
+      y,
+      0,
+      size / img:getWidth(),
+      size / img:getHeight()
     )
   elseif tool == "fire" then
     local targetSize = size * 0.95
@@ -317,6 +331,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:setGround(col, row)
     grid:removeFire(col, row)
     grid:removeIce(col, row)
+    grid:removeMoss(col, row)
     grid:removeSnowflake(col, row)
     grid:removeTea(col, row)
     grid:removePuzzlePiece(col, row)
@@ -325,6 +340,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:removePressurePlate(col, row)
     grid:removeWall(col, row)
     grid:removeBoulder(col, row)
+  elseif tool == "moss" then
+    grid:addMoss(col, row)
   elseif tool == "fire" then
     grid:addFire(col, row)
   elseif tool == "ice" then
@@ -1343,6 +1360,10 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "5" then
     self.tool = "tea"
     self.loadDropdownOpen = false
+  elseif key == "o" then
+    self.tool = "moss"
+    self.loadDropdownOpen = false
+    self:setStatus("Moss block · green top-down, mossy side face")
   elseif key == "k" then
     self.tool = "pressure_plate"
     self.loadDropdownOpen = false

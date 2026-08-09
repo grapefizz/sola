@@ -10,6 +10,7 @@ local FIRE_FRAME_DURATION = 1 / 12
 local tileSprites
 local groundQuadCache = {}
 local iceQuadCache = {}
+local mossQuadCache = {}
 
 local function getTileSprites()
   if tileSprites then
@@ -19,6 +20,8 @@ local function getTileSprites()
   tileSprites = {
     ground = love.graphics.newImage("assets/floor.png"),
     ice = love.graphics.newImage("assets/ice.png"),
+    moss = love.graphics.newImage("assets/moss.png"),
+    mossSide = love.graphics.newImage("assets/moss-side.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
     fire = love.graphics.newImage("assets/fire-sheet.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
@@ -30,6 +33,8 @@ local function getTileSprites()
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
+  tileSprites.moss:setFilter("linear", "linear")
+  tileSprites.mossSide:setFilter("linear", "linear")
   tileSprites.snowflake:setFilter("linear", "linear")
   tileSprites.fire:setFilter("linear", "linear")
   tileSprites.keyTop:setFilter("linear", "linear")
@@ -50,6 +55,8 @@ local function getTileSprites()
   end
   tileSprites.ground:setWrap("repeat", "repeat")
   tileSprites.ice:setWrap("repeat", "repeat")
+  tileSprites.moss:setWrap("repeat", "repeat")
+  tileSprites.mossSide:setWrap("repeat", "repeat")
   return tileSprites
 end
 
@@ -83,6 +90,7 @@ function Grid.new(size, columns, rows, fillGround)
     waterTiles = {},
     fireTiles = {},
     iceTiles = {},
+    mossTiles = {},
     snowflakeTiles = {},
     teaTiles = {},
     puzzlePieceTiles = {}, -- key halves on the ground
@@ -167,6 +175,7 @@ function Grid:occupiedBounds(padding)
   consider(self.waterTiles)
   consider(self.fireTiles)
   consider(self.iceTiles)
+  consider(self.mossTiles)
   consider(self.snowflakeTiles)
   consider(self.teaTiles)
   consider(self.puzzlePieceTiles)
@@ -221,6 +230,7 @@ function Grid:erase(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
@@ -239,6 +249,7 @@ function Grid:clear()
   self.waterTiles = {}
   self.fireTiles = {}
   self.iceTiles = {}
+  self.mossTiles = {}
   self.snowflakeTiles = {}
   self.teaTiles = {}
   self.puzzlePieceTiles = {}
@@ -310,6 +321,7 @@ function Grid:addFire(col, row)
   local key = self:key(col, row)
   self.waterTiles[key] = nil
   self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
@@ -341,6 +353,7 @@ function Grid:addIce(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
   self.waterTiles[key] = nil
+  self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
@@ -356,6 +369,32 @@ end
 
 function Grid:isIceTile(col, row)
   return self.iceTiles[self:key(col, row)] ~= nil
+end
+
+function Grid:addMoss(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.fireTiles[key] = nil
+  self.waterTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
+  self.wallTiles[key] = nil
+  -- Keep boulder, puzzle pieces, and pressure plates so moss can sit under them.
+  self.mossTiles[key] = { col = col, row = row }
+end
+
+function Grid:removeMoss(col, row)
+  self.mossTiles[self:key(col, row)] = nil
+end
+
+function Grid:isMossTile(col, row)
+  return self.mossTiles[self:key(col, row)] ~= nil
 end
 
 function Grid:isInFireZone(col, row)
@@ -379,6 +418,7 @@ function Grid:addSnowflake(col, row)
   local key = self:key(col, row)
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
@@ -419,6 +459,7 @@ function Grid:addTea(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
@@ -511,6 +552,7 @@ function Grid:addPuzzleDoor(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
@@ -631,6 +673,7 @@ function Grid:addWall(col, row, texture, lean, options)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
   self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
@@ -988,8 +1031,13 @@ function Grid:serialize()
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
         cells[col] = boulder.cracked and "Q" or "O"
+      elseif self:isBoulderTile(col, row) and self:isMossTile(col, row) then
+        local boulder = self.boulderTiles[self:key(col, row)]
+        cells[col] = boulder.cracked and "p" or "b"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
+      elseif self:isMossTile(col, row) then
+        cells[col] = "o"
       elseif self:isSnowflakeTile(col, row) then
         cells[col] = "S"
       elseif self:isBoulderTile(col, row) then
@@ -1074,6 +1122,14 @@ function Grid:load(serialized)
         self:addFire(col, row)
       elseif cell == "I" then
         self:addIce(col, row)
+      elseif cell == "o" then
+        self:addMoss(col, row)
+      elseif cell == "b" then
+        self:addMoss(col, row)
+        self:addBoulder(col, row)
+      elseif cell == "p" then
+        self:addMoss(col, row)
+        self:addBoulder(col, row, { cracked = true })
       elseif cell == "O" then
         self:addIce(col, row)
         self:addBoulder(col, row)
@@ -1736,6 +1792,29 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     end
   end
 
+  for _, moss in pairs(self.mossTiles) do
+    if isVisible(moss) and include(moss.col, moss.row) and not getBehindWallAt(moss.col, moss.row) then
+      local x, y = self:tileOrigin(moss.col, moss.row)
+      local quad, cellWidth, cellHeight = getTextureQuad(
+        sprites.moss,
+        mossQuadCache,
+        moss.col,
+        moss.row,
+        1
+      )
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.draw(
+        sprites.moss,
+        quad,
+        x,
+        y,
+        0,
+        self.size / cellWidth,
+        self.size / cellHeight
+      )
+    end
+  end
+
   -- Behind walls: full behind walls get an inset ground pad; half / side stay wall-only.
   local behindPad = math.max(8, math.floor(self.size * 0.18))
   for col = minCol, maxCol do
@@ -1745,8 +1824,15 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
         local x, y = self:tileOrigin(col, row)
         drawFrontWallTopdown(behind, x, y)
         if not behind.half and not hidesGround(col, row) then
-          local image = self:isIceTile(col, row) and sprites.ice or sprites.ground
-          local cache = self:isIceTile(col, row) and iceQuadCache or groundQuadCache
+          local image = sprites.ground
+          local cache = groundQuadCache
+          if self:isIceTile(col, row) then
+            image = sprites.ice
+            cache = iceQuadCache
+          elseif self:isMossTile(col, row) then
+            image = sprites.moss
+            cache = mossQuadCache
+          end
           local quad, cellWidth, cellHeight = getTextureQuad(image, cache, col, row, 1)
           love.graphics.setColor(1, 1, 1, 1)
           love.graphics.draw(
@@ -2008,7 +2094,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     return cache[key]
   end
 
-  local function drawFloorCell(col, row, ice, plateCut)
+  local function drawFloorCell(col, row, floorKind, plateCut)
     local x, y = self:tileOrigin(col, row)
     local floorTop = cellFloorTop(col, row)
     local faceTop = floorTop
@@ -2017,7 +2103,50 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     local lip = math.min(thick, faceHLocal * 0.38)
     local topH = math.max(2, faceHLocal - lip)
 
-    local image = ice and sprites.ice or sprites.ground
+    -- Moss side art is a full green/purple cross-section: fit the whole
+    -- silhouette into the floor face so the droops stay visible.
+    if floorKind == "moss" then
+      local image = sprites.mossSide
+      local imgW, imgH = image:getDimensions()
+      local function drawMossBand(destX, destW)
+        if destW < 1 then
+          return
+        end
+        local sx = ((destX - x) / size) * imgW
+        local sw = math.max(1, (destW / size) * imgW)
+        local key = "mossface:" .. col .. ":" .. row .. ":" .. math.floor(sx) .. ":" .. math.floor(sw)
+        local quad = floorFaceQuadCache[key]
+        if not quad then
+          quad = love.graphics.newQuad(sx, 0, sw, imgH, imgW, imgH)
+          floorFaceQuadCache[key] = quad
+        end
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(image, quad, destX, faceTop, 0, destW / sw, faceHLocal / imgH)
+        love.graphics.setColor(0.04, 0.05, 0.10, 0.35)
+        love.graphics.rectangle("fill", destX, faceTop + topH, destW, lip)
+        love.graphics.setColor(0.45, 0.72, 0.52, 0.40)
+        love.graphics.setLineWidth(1 / zoom)
+        love.graphics.line(destX, faceTop, destX + destW, faceTop)
+      end
+
+      if plateCut then
+        local plateW = size * 0.52
+        local flank = (size - plateW) * 0.5
+        drawMossBand(x, flank)
+        drawMossBand(x + flank + plateW, flank)
+        return
+      end
+
+      drawMossBand(x, size)
+      return
+    end
+
+    local image = sprites.ground
+    local kindTag = "g"
+    if floorKind == "ice" then
+      image = sprites.ice
+      kindTag = "i"
+    end
     local imgW, imgH = image:getDimensions()
     -- Same brick scale as top-down (one tile wide), cropped to face height so it isn't stretched.
     local srcW = imgW / TEXTURE_GRID_SIZE
@@ -2041,7 +2170,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       local srcBandW = math.max(1, destW / texScale)
       local ox, oy = topQuad:getViewport()
       local _, lipOy = lipQuad:getViewport()
-      local bandKey = "band:" .. col .. ":" .. row .. ":" .. math.floor(srcOffsetX) .. ":" .. math.floor(srcBandW) .. ":" .. (ice and "i" or "g")
+      local bandKey = "band:" .. col .. ":" .. row .. ":" .. math.floor(srcOffsetX) .. ":" .. math.floor(srcBandW) .. ":" .. kindTag
       local bandTop = floorFaceQuadCache[bandKey]
       if not bandTop then
         bandTop = love.graphics.newQuad(ox + srcOffsetX, oy, srcBandW, srcTopH, imgW, imgH)
@@ -2208,7 +2337,13 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     for col = minCol, maxCol do
       if self:hasGround(col, row) and include(col, row) then
         local hasPlate = self.pressurePlateTiles[self:key(col, row)] ~= nil
-        drawFloorCell(col, row, self:isIceTile(col, row), hasPlate)
+        local floorKind = "ground"
+        if self:isIceTile(col, row) then
+          floorKind = "ice"
+        elseif self:isMossTile(col, row) then
+          floorKind = "moss"
+        end
+        drawFloorCell(col, row, floorKind, hasPlate)
         if hasPlate then
           local floorTop = cellFloorTop(col, row)
           local centerX = (col - 0.5) * size
