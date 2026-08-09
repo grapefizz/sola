@@ -197,22 +197,8 @@ function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving,
   local mirror = flip and -1 or 1
 
   if mode == "side" then
-    -- Stand the ice-cube sprite on the floor with a tiny depth cue.
+    -- Stand the ice-cube sprite directly on the floor.
     local body = size
-    local depth = size * 0.16
-    local right = x + body * 0.42
-    local top = y - body
-    local bottom = y
-
-    love.graphics.setColor(0.42, 0.70, 0.90, 0.55)
-    love.graphics.polygon(
-      "fill",
-      right, top + 4,
-      right + depth, top - depth * 0.35,
-      right + depth, bottom - depth * 0.35,
-      right, bottom - 2
-    )
-
     local scale = body / PLAYER_FRAME_SIZE
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(
