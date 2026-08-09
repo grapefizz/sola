@@ -25,6 +25,7 @@ local LEGEND_H = 132
 -- and its left-panel icon is snapshotted automatically.
 local TOOLS = {
   { name = "ground", label = "Ground", icon = "tile" },
+  { name = "moss", label = "Moss Block", icon = "tile" },
   { name = "fire", label = "Campfire", icon = "tile" },
   { name = "ice", label = "Ice Floor", icon = "tile" },
   { name = "snowflake", label = "Snowflake", icon = "tile" },
@@ -73,52 +74,31 @@ local function getPreviewSprites()
   previewSprites = {
     ground = love.graphics.newImage("assets/floor.png"),
     ice = love.graphics.newImage("assets/ice.png"),
+    moss = love.graphics.newImage("assets/moss.png"),
+    mossSide = love.graphics.newImage("assets/moss-side.png"),
     snowflake = love.graphics.newImage("assets/snowflake.png"),
     fire = love.graphics.newImage("assets/fire.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
+    keyPieceTop = love.graphics.newImage("assets/key-piece-top.png"),
+    keyPieceBottom = love.graphics.newImage("assets/key-piece-bottom.png"),
+    keyPieceTopSide = love.graphics.newImage("assets/key-piece-top-side.png"),
+    keyPieceBottomSide = love.graphics.newImage("assets/key-piece-bottom-side.png"),
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
   }
-  previewSprites.ground:setFilter("linear", "linear")
-  previewSprites.ice:setFilter("linear", "linear")
-  previewSprites.snowflake:setFilter("linear", "linear")
-  previewSprites.fire:setFilter("linear", "linear")
-  previewSprites.keyTop:setFilter("linear", "linear")
-  previewSprites.keyDown:setFilter("linear", "linear")
-  previewSprites.boulder:setFilter("linear", "linear")
-  previewSprites.boulder2:setFilter("linear", "linear")
-  previewSprites.crackedBoulder:setFilter("linear", "linear")
+  for _, image in pairs(previewSprites) do
+    image:setFilter("linear", "linear")
+  end
   return previewSprites
 end
 
-local keySectionPreviewQuads = {}
-
-local function getKeySectionPreviewQuad(image, section, sideView)
-  local cacheKey = (sideView and "s:" or "t:") .. section
-  if keySectionPreviewQuads[cacheKey] then
-    return keySectionPreviewQuads[cacheKey]
-  end
-  local iw, ih = image:getDimensions()
-  local quad
+local function getKeyPiecePreview(sprites, section, sideView)
   if sideView then
-    local split = math.floor(ih * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
-    end
-  else
-    local split = math.floor(iw * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
-    end
+    return section == "down" and sprites.keyPieceBottomSide or sprites.keyPieceTopSide
   end
-  keySectionPreviewQuads[cacheKey] = quad
-  return quad
+  return section == "down" and sprites.keyPieceBottom or sprites.keyPieceTop
 end
 
 local function withAlpha(r, g, b, a, alpha)
@@ -143,6 +123,17 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
       0,
       size / sprites.ground:getWidth(),
       size / sprites.ground:getHeight()
+    )
+  elseif tool == "moss" then
+    local img = Perspective.isSide() and sprites.mossSide or sprites.moss
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(
+      img,
+      x,
+      y,
+      0,
+      size / img:getWidth(),
+      size / img:getHeight()
     )
   elseif tool == "fire" then
     local targetSize = size * 0.95
@@ -210,13 +201,12 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     )
   elseif tool == "puzzle_piece" then
     local sideView = Perspective.isSide()
-    local img = sideView and sprites.keyDown or sprites.keyTop
-    local quad = getKeySectionPreviewQuad(img, keyVariant, sideView)
-    local _, _, qw, qh = quad:getViewport()
+    local img = getKeyPiecePreview(sprites, keyVariant, sideView)
+    local iw, ih = img:getDimensions()
     local target = size * 0.78
-    local scale = target / math.max(qw, qh)
+    local scale = target / math.max(iw, ih)
     withAlpha(1, 1, 1, 1, alpha)
-    love.graphics.draw(img, quad, cx, cy, 0, scale, scale, qw * 0.5, qh * 0.5)
+    love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif tool == "pressure_plate" then
     local plateW = size * 0.72
     local plateH = size * 0.22
@@ -329,6 +319,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:setGround(col, row)
     grid:removeFire(col, row)
     grid:removeIce(col, row)
+    grid:removeMoss(col, row)
     grid:removeSnowflake(col, row)
     grid:removeTea(col, row)
     grid:removePuzzlePiece(col, row)
@@ -337,6 +328,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:removePressurePlate(col, row)
     grid:removeWall(col, row)
     grid:removeBoulder(col, row)
+  elseif tool == "moss" then
+    grid:addMoss(col, row)
   elseif tool == "fire" then
     grid:addFire(col, row)
   elseif tool == "ice" then
@@ -1357,6 +1350,10 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "5" then
     self.tool = "tea"
     self.loadDropdownOpen = false
+  elseif key == "o" then
+    self.tool = "moss"
+    self.loadDropdownOpen = false
+    self:setStatus("Moss block · green top-down, mossy side face")
   elseif key == "k" then
     self.tool = "pressure_plate"
     self.loadDropdownOpen = false

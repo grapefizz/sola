@@ -1585,7 +1585,7 @@ local function drawCredits(width, height)
   drawSnow()
   local e = easeOutCubic(intro)
 
-  local pw, ph = 360, 280
+  local pw, ph = 360, 320
   local px = math.floor((width - pw) * 0.5)
   local py = math.floor((height - ph) * 0.5 + (1 - e) * 10)
   drawPanel(px, py, pw, ph, e)
@@ -1605,10 +1605,12 @@ local function drawCredits(width, height)
   local lines = {
     "Made with Love2D",
     "",
-    "Game Devs:",
+    "Programmers:",
     "Lora Vega",
     "Ari Karakushi",
     "Dielli Jashari",
+    "",
+    "Artists:",
     "Ronin Bekolli",
     "Tuan Bullaku",
     "",
@@ -1620,7 +1622,7 @@ local function drawCredits(width, height)
     local col = 0.95
     if line:find("[Ee]sc") then
       col = 0.65
-    elseif line == "Game Devs:" then
+    elseif line == "Programmers:" or line == "Artists:" then
       col = 0.78
     end
     setUiColor("text", a * col)
