@@ -32,7 +32,6 @@ local PLAYER_MOVE_FRAME_RANGES = {
 }
 local playerAnimations = {}
 local keySprites
-
 local function getKeySprites()
   if keySprites then
     return keySprites
@@ -198,8 +197,7 @@ function Player.drawSprite(x, y, size, time, mode, facingDx, facingDy, isMoving,
 
   if mode == "side" then
     -- Stand the ice-cube sprite directly on the floor.
-    local body = size
-    local scale = body / PLAYER_FRAME_SIZE
+    local scale = size / PLAYER_FRAME_SIZE
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(
       animation.image,
@@ -238,6 +236,23 @@ local function directionFromKey(key)
   elseif key == "up" or key == "w" then
     return 0, -1
   elseif key == "down" or key == "s" then
+    return 0, 1
+  end
+  return nil, nil
+end
+
+local function heldDirection()
+  -- Horizontal wins if both axes are held (matches prior movement priority).
+  if love.keyboard.isDown("left", "a") then
+    return -1, 0
+  end
+  if love.keyboard.isDown("right", "d") then
+    return 1, 0
+  end
+  if love.keyboard.isDown("up", "w") then
+    return 0, -1
+  end
+  if love.keyboard.isDown("down", "s") then
     return 0, 1
   end
   return nil, nil
@@ -583,57 +598,104 @@ function Player:update(dt, grid)
   end
 
   local movement = self.movement
-  if not movement.active then
-    if self.slide.active then
-      self:continueSlide(grid)
-    end
-    return
-  end
+  if movement.active then
+    movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
+    if movement.elapsed >= movement.duration then
+      grid:addWater(movement.toCol, movement.toRow)
+      grid:consumeSnowflake(movement.toCol, movement.toRow)
 
-
-  movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
-  if movement.elapsed >= movement.duration then
-    grid:addWater(movement.toCol, movement.toRow)
-    grid:consumeSnowflake(movement.toCol, movement.toRow)
-
-    -- Key halves assemble in-hand; full key opens a key door on contact.
-    if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
-      if self.heldItem == nil then
-        local ok, variant = grid:consumePuzzlePiece(movement.toCol, movement.toRow)
-        if ok then
-          self.heldItem = "key_half"
-          self.heldKeyVariant = variant or "top"
+      -- Key halves assemble in-hand; full key opens a key door on contact.
+      if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
+        if self.heldItem == nil then
+          local ok, variant = grid:consumePuzzlePiece(movement.toCol, movement.toRow)
+          if ok then
+            self.heldItem = "key_half"
+            self.heldKeyVariant = variant or "top"
+          end
+        elseif self.heldItem == "key_half" then
+          if grid:consumePuzzlePiece(movement.toCol, movement.toRow) then
+            self.heldItem = "key"
+            self.heldKeyVariant = nil
+          end
         end
-      elseif self.heldItem == "key_half" then
-        if grid:consumePuzzlePiece(movement.toCol, movement.toRow) then
-          self.heldItem = "key"
+      elseif self.heldItem == "key" and grid:isPuzzleDoor(movement.toCol, movement.toRow) then
+        if grid:openPuzzleDoor(movement.toCol, movement.toRow) then
+          self.heldItem = nil
           self.heldKeyVariant = nil
         end
       end
-    elseif self.heldItem == "key" and grid:isPuzzleDoor(movement.toCol, movement.toRow) then
-      if grid:openPuzzleDoor(movement.toCol, movement.toRow) then
-        self.heldItem = nil
-        self.heldKeyVariant = nil
-      end
-    end
-    if movement.deadly then
-      self.dead = true
-      self.timeRemaining = 0
-      self:stopSlide()
-    elseif grid:isTeaTile(movement.toCol, movement.toRow) then
-      if grid:isTeaUnlocked() then
-        self.won = true
+      if movement.deadly then
+        self.dead = true
+        self.timeRemaining = 0
         self:stopSlide()
+      elseif grid:isTeaTile(movement.toCol, movement.toRow) then
+        if grid:isTeaUnlocked() then
+          self.won = true
+          self:stopSlide()
+        end
+      end
+      grid:updatePressurePlates(self.col, self.row, self:sizeRatio())
+      movement.active = false
+      if self.slide.active and not self.dead and not self.won and not self:isMelted() then
+        self:continueSlide(grid)
       end
     end
-    grid:updatePressurePlates(self.col, self.row, self:sizeRatio())
-    movement.active = false
-    if self.slide.active and not self.dead and not self.won and not self:isMelted() then
-      self:continueSlide(grid)
+  elseif self.slide.active then
+    self:continueSlide(grid)
+  end
+
+  -- Keep stepping while a move key is held (no need to tap repeatedly).
+  if not self.movement.active and not self.slide.active then
+    local dx, dy = heldDirection()
+    if dx then
+      self:tryStep(dx, dy, grid)
     end
   end
 end
 
+
+function Player:tryStep(dx, dy, grid)
+  if self.dead or self.won or self:isMelted() then
+    return false
+  end
+  if not dx or (dx == 0 and dy == 0) then
+    return false
+  end
+
+  self.facingDx = dx
+  self.facingDy = dy
+  if dx ~= 0 then
+    self.jumpFacingDx = dx
+  end
+
+  -- Locked in until the slide hits something.
+  if self.movement.active or self.slide.active then
+    return false
+  end
+
+  local nextCol, nextRow = self.col + dx, self.row + dy
+  if self:trySmashBoulderAhead(grid, nextCol, nextRow) then
+    self:stopSlide()
+    return true
+  end
+  self:trySmashWallAhead(grid, nextCol, nextRow)
+  local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
+  if not ok then
+    return false
+  end
+
+  self:beginStep(grid, col, row, deadly, false)
+
+  if grid:isIceTile(col, row) then
+    local slide = self.slide
+    slide.active = true
+    slide.dx = dx
+    slide.dy = dy
+  else
+    self:stopSlide()
+  end
+  return true
+end
 
 function Player:keypressed(key, grid)
   if self.dead or self.won or self:isMelted() then
@@ -653,38 +715,7 @@ function Player:keypressed(key, grid)
     return
   end
 
-  self.facingDx = dx
-  self.facingDy = dy
-  if dx ~= 0 then
-    self.jumpFacingDx = dx
-  end
-
-  -- Locked in until the slide hits something.
-  if self.movement.active or self.slide.active then
-    return
-  end
-
-  local nextCol, nextRow = self.col + dx, self.row + dy
-  if self:trySmashBoulderAhead(grid, nextCol, nextRow) then
-    self:stopSlide()
-    return
-  end
-  self:trySmashWallAhead(grid, nextCol, nextRow)
-  local ok, col, row, deadly = self:canStepTo(grid, nextCol, nextRow)
-  if not ok then
-    return
-  end
-
-  self:beginStep(grid, col, row, deadly, false)
-
-  if grid:isIceTile(col, row) then
-    local slide = self.slide
-    slide.active = true
-    slide.dx = dx
-    slide.dy = dy
-  else
-    self:stopSlide()
-  end
+  self:tryStep(dx, dy, grid)
 end
 
 
