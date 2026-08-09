@@ -1000,66 +1000,6 @@ local function levelsGridMetrics(width, height)
   return gridX, gridY, gridW, gridH
 end
 
-<<<<<<< HEAD
-=======
-local function perspectiveButtonRect(width, height)
-  local bw, bh = 148, 34
-  local x = width - bw - 18
-  local y = 18
-  return x, y, bw, bh
-end
-
-local function perspectiveButtonHit(mx, my, width, height)
-  local x, y, w, h = perspectiveButtonRect(width, height)
-  if mx >= x and mx <= x + w and my >= y and my <= y + h then
-    return true
-  end
-  return false
-end
-
-local function togglePerspectiveView()
-  Perspective.toggle()
-  clearLevelPreviews()
-  playSfx(sfxToggle)
-  bumpShake(2.5, 0.12)
-end
-
-local function drawPerspectiveButton(width, height, alpha)
-  alpha = alpha or 1
-  local x, y, w, h = perspectiveButtonRect(width, height)
-  local hover = perspectiveButtonHit(mouseX, mouseY, width, height)
-  local side = Perspective.isSide()
-
-  setUiColor("panelOuter", 0.92 * alpha)
-  love.graphics.rectangle("fill", x, y, w, h, 6, 6)
-  if hover or side then
-    setUiColor("selectionBright", (hover and 0.95 or 0.72) * alpha)
-  else
-    setUiColor("panelHighlight", 0.75 * alpha)
-  end
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2, 5, 5)
-
-  -- Tiny glyph: plan square vs standing block.
-  local gx = x + 12
-  local gy = y + 8
-  if side then
-    love.graphics.setColor(0.78, 0.58, 0.42, alpha)
-    love.graphics.rectangle("fill", gx + 4, gy, 10, 18, 1, 1)
-    love.graphics.setColor(0.92, 0.78, 0.58, alpha)
-    love.graphics.rectangle("fill", gx + 4, gy, 10, 3, 1, 1)
-  else
-    setUiColor("accent", alpha)
-    love.graphics.rectangle("fill", gx, gy + 4, 16, 12, 2, 2)
-  end
-
-  love.graphics.setFont(fonts.small)
-  local label = Perspective.shortLabel() .. " View"
-  setUiColor("text", alpha)
-  love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
-end
-
->>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
 local function levelCardRect(index, width, height)
   local localIndex = index - levelScroll * CARD_COLS
   if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
@@ -1592,13 +1532,8 @@ local function drawLevels(width, height)
   end
 
   love.graphics.setFont(fonts.small)
-<<<<<<< HEAD
   love.graphics.setColor(0.75, 0.88, 1.0, 0.8 * e)
   local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
-=======
-  setUiColor("textMuted", 0.9 * e)
-  local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
->>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
 
   drawSnow()
@@ -1608,7 +1543,7 @@ local function drawCredits(width, height)
   drawAtmosphere(width, height)
   local e = easeOutCubic(intro)
 
-  local pw, ph = 360, 280
+  local pw, ph = 360, 320
   local px = math.floor((width - pw) * 0.5)
   local py = math.floor((height - ph) * 0.5 + (1 - e) * 10)
   drawPanel(px, py, pw, ph, e)
@@ -1628,10 +1563,12 @@ local function drawCredits(width, height)
   local lines = {
     "Made with Love2D",
     "",
-    "Game Devs:",
+    "Programmers:",
     "Lora Vega",
     "Ari Karakushi",
     "Dielli Jashari",
+    "",
+    "Artists:",
     "Ronin Bekolli",
     "Tuan Bullaku",
     "",
@@ -1643,7 +1580,7 @@ local function drawCredits(width, height)
     local col = 0.95
     if line:find("[Ee]sc") then
       col = 0.65
-    elseif line == "Game Devs:" then
+    elseif line == "Programmers:" or line == "Artists:" then
       col = 0.78
     end
     setUiColor("text", a * col)

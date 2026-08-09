@@ -23,6 +23,10 @@ local function getTileSprites()
     fire = love.graphics.newImage("assets/fire-sheet.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
+    keyPieceTop = love.graphics.newImage("assets/key-piece-top.png"),
+    keyPieceBottom = love.graphics.newImage("assets/key-piece-bottom.png"),
+    keyPieceTopSide = love.graphics.newImage("assets/key-piece-top-side.png"),
+    keyPieceBottomSide = love.graphics.newImage("assets/key-piece-bottom-side.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -30,6 +34,10 @@ local function getTileSprites()
   tileSprites.fire:setFilter("linear", "linear")
   tileSprites.keyTop:setFilter("linear", "linear")
   tileSprites.keyDown:setFilter("linear", "linear")
+  tileSprites.keyPieceTop:setFilter("linear", "linear")
+  tileSprites.keyPieceBottom:setFilter("linear", "linear")
+  tileSprites.keyPieceTopSide:setFilter("linear", "linear")
+  tileSprites.keyPieceBottomSide:setFilter("linear", "linear")
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -1217,32 +1225,11 @@ end
 
 -- One key split into sections: "top" = bow half, "down" = bit half, full = whole.
 -- top-down uses key-top.png (left/right); side view uses key-down.png (up/down).
-local keySectionQuadCache = {}
-
-local function getKeySectionQuad(image, section, sideView)
-  local cacheKey = (sideView and "s:" or "t:") .. section
-  if keySectionQuadCache[cacheKey] then
-    return keySectionQuadCache[cacheKey]
-  end
-  local iw, ih = image:getDimensions()
-  local quad
+local function getKeyPieceImage(sprites, section, sideView)
   if sideView then
-    local split = math.floor(ih * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
-    end
-  else
-    local split = math.floor(iw * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
-    end
+    return section == "down" and sprites.keyPieceBottomSide or sprites.keyPieceTopSide
   end
-  keySectionQuadCache[cacheKey] = quad
-  return quad
+  return section == "down" and sprites.keyPieceBottom or sprites.keyPieceTop
 end
 
 local function drawKeySprite(centerX, centerY, size, section, full, alpha, sideView)
@@ -1251,28 +1238,35 @@ local function drawKeySprite(centerX, centerY, size, section, full, alpha, sideV
     section = "top"
   end
   local sprites = getTileSprites()
-  local image = sideView and sprites.keyDown or sprites.keyTop
-  local iw, ih = image:getDimensions()
-  love.graphics.setColor(1, 1, 1, alpha)
+  local pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(love.timer.getTime() * 3.2))
+
+  local function drawGlow(image, scale, ox, oy)
+    love.graphics.setColor(1, 0.78, 0.2, 0.18 * alpha * pulse)
+    love.graphics.draw(image, centerX, centerY, 0, scale * 1.08, scale * 1.08, ox, oy)
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.draw(image, centerX, centerY, 0, scale, scale, ox, oy)
+  end
 
   if full then
-    local target = size * 0.82
+    local image = sideView and sprites.keyDown or sprites.keyTop
+    local iw, ih = image:getDimensions()
+    local target = size * 0.86
     local scale = target / math.max(iw, ih)
     local ox, oy = iw * 0.5, sideView and ih or (ih * 0.5)
-    love.graphics.draw(image, centerX, centerY, 0, scale, scale, ox, oy)
+    drawGlow(image, scale, ox, oy)
     return
   end
 
-  local quad = getKeySectionQuad(image, section, sideView)
-  local _, _, qw, qh = quad:getViewport()
-  local target = size * 0.72
-  local scale = target / math.max(qw, qh)
-  local ox, oy = qw * 0.5, qh * 0.5
+  local image = getKeyPieceImage(sprites, section, sideView)
+  local iw, ih = image:getDimensions()
+  local target = size * 0.76
+  local scale = target / math.max(iw, ih)
+  local ox, oy = iw * 0.5, ih * 0.5
   if sideView then
     -- Sit the fragment on the floor line.
-    oy = qh
+    oy = ih
   end
-  love.graphics.draw(image, quad, centerX, centerY, 0, scale, scale, ox, oy)
+  drawGlow(image, scale, ox, oy)
 end
 
 -- Side-view doors share front-wall elevation size (wall height above floor face).

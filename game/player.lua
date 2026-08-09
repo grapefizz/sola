@@ -40,38 +40,22 @@ local function getKeySprites()
   keySprites = {
     top = love.graphics.newImage("assets/key-top.png"),
     down = love.graphics.newImage("assets/key-down.png"),
+    pieceTop = love.graphics.newImage("assets/key-piece-top.png"),
+    pieceBottom = love.graphics.newImage("assets/key-piece-bottom.png"),
+    pieceTopSide = love.graphics.newImage("assets/key-piece-top-side.png"),
+    pieceBottomSide = love.graphics.newImage("assets/key-piece-bottom-side.png"),
   }
-  keySprites.top:setFilter("linear", "linear")
-  keySprites.down:setFilter("linear", "linear")
+  for _, image in pairs(keySprites) do
+    image:setFilter("linear", "linear")
+  end
   return keySprites
 end
 
-local keyHeldSectionQuads = {}
-
-local function getHeldKeySectionQuad(image, section, sideView)
-  local cacheKey = (sideView and "s:" or "t:") .. section
-  if keyHeldSectionQuads[cacheKey] then
-    return keyHeldSectionQuads[cacheKey]
-  end
-  local iw, ih = image:getDimensions()
-  local quad
+local function getHeldKeyPiece(sprites, section, sideView)
   if sideView then
-    local split = math.floor(ih * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
-    end
-  else
-    local split = math.floor(iw * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
-    end
+    return section == "down" and sprites.pieceBottomSide or sprites.pieceTopSide
   end
-  keyHeldSectionQuads[cacheKey] = quad
-  return quad
+  return section == "down" and sprites.pieceBottom or sprites.pieceTop
 end
 
 local function drawHeldKey(x, y, size, section, full, mode)
@@ -80,24 +64,31 @@ local function drawHeldKey(x, y, size, section, full, mode)
   if section ~= "down" then
     section = "top"
   end
-  local image = sideView and sprites.down or sprites.top
-  local iw, ih = image:getDimensions()
-  love.graphics.setColor(1, 1, 1, 1)
+  local pulse = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(love.timer.getTime() * 3.2))
+
+  local function drawGlow(image, scale, ox, oy)
+    love.graphics.setColor(1, 0.78, 0.2, 0.22 * pulse)
+    love.graphics.draw(image, x, y, 0, scale * 1.1, scale * 1.1, ox, oy)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(image, x, y, 0, scale, scale, ox, oy)
+  end
 
   if full then
-    local target = size * 0.9
+    local image = sideView and sprites.down or sprites.top
+    local iw, ih = image:getDimensions()
+    local target = size * 0.95
     local scale = target / math.max(iw, ih)
     local ox, oy = iw * 0.5, sideView and ih or (ih * 0.5)
-    love.graphics.draw(image, x, y, 0, scale, scale, ox, oy)
+    drawGlow(image, scale, ox, oy)
     return
   end
 
-  local quad = getHeldKeySectionQuad(image, section, sideView)
-  local _, _, qw, qh = quad:getViewport()
-  local target = size * 0.75
-  local scale = target / math.max(qw, qh)
-  local ox, oy = qw * 0.5, sideView and qh or (qh * 0.5)
-  love.graphics.draw(image, quad, x, y, 0, scale, scale, ox, oy)
+  local image = getHeldKeyPiece(sprites, section, sideView)
+  local iw, ih = image:getDimensions()
+  local target = size * 0.8
+  local scale = target / math.max(iw, ih)
+  local ox, oy = iw * 0.5, sideView and ih or (ih * 0.5)
+  drawGlow(image, scale, ox, oy)
 end
 
 local function cubicBezierCoordinate(t, firstControl, secondControl)
@@ -825,7 +816,6 @@ function Player:drawHud(grid)
       line = line .. "  ·  Holding key"
     end
     love.graphics.print(line, 18, 38)
-<<<<<<< HEAD
     if grid and grid:hasKeyDoor() and not grid:isTeaUnlocked() then
       love.graphics.setColor(0.75, 0.72, 0.55)
       if self.heldItem == "key" then
@@ -838,17 +828,8 @@ function Player:drawHud(grid)
     elseif grid and grid:isTeaTile(self.col, self.row) and not grid:isTeaUnlocked() then
       love.graphics.setColor(0.85, 0.65, 0.45)
       love.graphics.print("Open all key doors to unlock the iced tea.", 18, 58)
-    end  else
-=======
-    if grid and grid:hasPuzzleCanvas() and not grid:isTeaUnlocked() then
-      love.graphics.setColor(0.72, 0.67, 0.80)
-      love.graphics.print("Find puzzle pieces and place them on the canvas.", 18, 58)
-    elseif grid and grid:isTeaTile(self.col, self.row) and not grid:isTeaUnlocked() then
-      love.graphics.setColor(0.82, 0.56, 0.68)
-      love.graphics.print("Complete the puzzle to unlock the iced tea.", 18, 58)
     end
   else
->>>>>>> 21b7afb58256a5dc8c27e9f6809929c9bdfdf4b3
     love.graphics.print("The ice cube has melted!", 18, 38)
   end
 end

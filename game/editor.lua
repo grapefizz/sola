@@ -76,42 +76,22 @@ local function getPreviewSprites()
     fire = love.graphics.newImage("assets/fire.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
+    keyPieceTop = love.graphics.newImage("assets/key-piece-top.png"),
+    keyPieceBottom = love.graphics.newImage("assets/key-piece-bottom.png"),
+    keyPieceTopSide = love.graphics.newImage("assets/key-piece-top-side.png"),
+    keyPieceBottomSide = love.graphics.newImage("assets/key-piece-bottom-side.png"),
   }
-  previewSprites.ground:setFilter("linear", "linear")
-  previewSprites.ice:setFilter("linear", "linear")
-  previewSprites.snowflake:setFilter("linear", "linear")
-  previewSprites.fire:setFilter("linear", "linear")
-  previewSprites.keyTop:setFilter("linear", "linear")
-  previewSprites.keyDown:setFilter("linear", "linear")
+  for _, image in pairs(previewSprites) do
+    image:setFilter("linear", "linear")
+  end
   return previewSprites
 end
 
-local keySectionPreviewQuads = {}
-
-local function getKeySectionPreviewQuad(image, section, sideView)
-  local cacheKey = (sideView and "s:" or "t:") .. section
-  if keySectionPreviewQuads[cacheKey] then
-    return keySectionPreviewQuads[cacheKey]
-  end
-  local iw, ih = image:getDimensions()
-  local quad
+local function getKeyPiecePreview(sprites, section, sideView)
   if sideView then
-    local split = math.floor(ih * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(0, split, iw, ih - split, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, iw, split, iw, ih)
-    end
-  else
-    local split = math.floor(iw * 0.48)
-    if section == "down" then
-      quad = love.graphics.newQuad(split, 0, iw - split, ih, iw, ih)
-    else
-      quad = love.graphics.newQuad(0, 0, split, ih, iw, ih)
-    end
+    return section == "down" and sprites.keyPieceBottomSide or sprites.keyPieceTopSide
   end
-  keySectionPreviewQuads[cacheKey] = quad
-  return quad
+  return section == "down" and sprites.keyPieceBottom or sprites.keyPieceTop
 end
 
 local function withAlpha(r, g, b, a, alpha)
@@ -203,13 +183,12 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     )
   elseif tool == "puzzle_piece" then
     local sideView = Perspective.isSide()
-    local img = sideView and sprites.keyDown or sprites.keyTop
-    local quad = getKeySectionPreviewQuad(img, keyVariant, sideView)
-    local _, _, qw, qh = quad:getViewport()
+    local img = getKeyPiecePreview(sprites, keyVariant, sideView)
+    local iw, ih = img:getDimensions()
     local target = size * 0.78
-    local scale = target / math.max(qw, qh)
+    local scale = target / math.max(iw, ih)
     withAlpha(1, 1, 1, 1, alpha)
-    love.graphics.draw(img, quad, cx, cy, 0, scale, scale, qw * 0.5, qh * 0.5)
+    love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif tool == "pressure_plate" then
     local plateW = size * 0.72
     local plateH = size * 0.22
