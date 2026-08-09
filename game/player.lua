@@ -401,7 +401,8 @@ function Player:canStepTo(grid, col, row)
   return true, col, row, deadly
 end
 
--- Solid obstacles you cannot vault over (or land on) with a jump.
+-- Solid obstacles you cannot vault over with a jump.
+-- Low half / behind walls can still be jumped *over*, but never landed on.
 function Player:isJumpBlocked(grid, col, row)
   if grid:isBoulderTile(col, row) then
     return true
@@ -410,7 +411,7 @@ function Player:isJumpBlocked(grid, col, row)
     return false
   end
   local wall = grid.wallTiles[grid:key(col, row)]
-  if wall.texture == "side" then
+  if wall.texture == "side" or wall.half2 then
     return true
   end
   if wall.half or wall.depth == "behind" then
@@ -419,7 +420,7 @@ function Player:isJumpBlocked(grid, col, row)
   return true
 end
 
--- Landing tile after skipping one block (must be walkable ground).
+-- Landing tile after skipping one block (must be walkable ground — no walls).
 function Player:canJumpLand(grid, col, row)
   col, row = grid:clamp(col, row)
   if (col == self.col and row == self.row)
@@ -427,7 +428,10 @@ function Player:canJumpLand(grid, col, row)
     or self.dead
     or self.won
     or self:isMelted()
-    or self:isJumpBlocked(grid, col, row) then
+    or grid:isWallTile(col, row)
+    or grid:isBoulderTile(col, row)
+    or grid:isPuzzleDoor(col, row)
+    or (grid:isPressureDoor(col, row) and not grid:isPressureDoorOpen()) then
     return false
   end
   local deadly = grid:isFireTile(col, row)
@@ -513,12 +517,13 @@ function Player:tryJump(grid)
   local candidates = {
     { col = self.col + dx * 2, row = self.row - 1, needArc = true },
     { col = self.col + dx * 2, row = self.row, needArc = false },
+    { col = self.col + dx * 2, row = self.row + 1, needArc = false },
   }
 
   local landCol, landRow, deadly
   for _, candidate in ipairs(candidates) do
     if candidate.needArc and not self:canJumpOver(grid, overCol, self.row - 1) then
-
+      -- Blocked from arcing up over the near tile.
     else
       local ok, col, row, tileDeadly = self:canJumpLand(grid, candidate.col, candidate.row)
       if ok then

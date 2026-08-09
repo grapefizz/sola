@@ -461,7 +461,11 @@ function Grid:addIce(col, row)
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
-  self.wallTiles[key] = nil
+  -- Keep transparent side / half wall overlays sitting on this ice.
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   -- Keep boulder, puzzle pieces, and pressure plates so ice can sit under them.
   self.iceTiles[key] = { col = col, row = row }
 end
@@ -487,7 +491,10 @@ function Grid:addMoss(col, row)
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
-  self.wallTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   -- Keep boulder, puzzle pieces, and pressure plates so moss can sit under them.
   self.mossTiles[key] = { col = col, row = row }
 end
@@ -527,7 +534,10 @@ function Grid:addSnowflake(col, row)
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.wallTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   self.boulderTiles[key] = nil
   self.snowflakeTiles[key] = { col = col, row = row }
 end
@@ -775,15 +785,11 @@ function Grid:addWall(col, row, texture, lean, options)
   local key = self:key(col, row)
   self.waterTiles[key] = nil
   self.fireTiles[key] = nil
-  self.iceTiles[key] = nil
-  self.mossTiles[key] = nil
-  self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.boulderTiles[key] = nil
 
   local fill = nil
   if options.half then
@@ -791,6 +797,15 @@ function Grid:addWall(col, row, texture, lean, options)
     fill = math.max(0.1, math.min(0.9, fill))
     fill = math.floor(fill * 10 + 0.5) / 10
     texture = "front"
+  end
+
+  -- Side / half walls are transparent overlays: keep floor props and boulders.
+  local overlay = texture == "side" or options.half
+  if not overlay then
+    self.iceTiles[key] = nil
+    self.mossTiles[key] = nil
+    self.snowflakeTiles[key] = nil
+    self.boulderTiles[key] = nil
   end
 
   local existing = self.wallTiles[key]
@@ -945,20 +960,9 @@ function Grid:getUnderWall(col, row)
 end
 
 -- sizeRatio is timeRemaining/maxTime (1 = full cube). Bigger fill = taller wall = smaller cube required.
+-- Bottom half-walls used to be crawlable when melted; all wall tiles are solid now.
 function Grid:canPassHalfWall(col, row, sizeRatio)
-  local wall = self.wallTiles[self:key(col, row)]
-  if not wall then
-    return false
-  end
-  -- Side walls always block; half-pass only applies to front half walls on the front layer.
-  if wall.texture == "side" then
-    return false
-  end
-  if not wall.half then
-    return false
-  end
-  local fill = wall.fill or 0.5
-  return sizeRatio <= (1 - fill) + 1e-6
+  return false
 end
 
 function Grid:addBoulder(col, row, options)
@@ -977,7 +981,10 @@ function Grid:addBoulder(col, row, options)
   self.puzzleDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.wallTiles[key] = nil
+  local wall = self.wallTiles[key]
+  if wall and not (wall.texture == "side" or wall.half) then
+    self.wallTiles[key] = nil
+  end
   self.boulderTiles[key] = {
     col = col,
     row = row,
@@ -1009,7 +1016,7 @@ function Grid:isCrackedBoulder(col, row)
   return boulder ~= nil and boulder.cracked == true
 end
 
--- Optional sizeRatio lets half-walls open when the ice cube is small enough.
+-- Optional sizeRatio kept for callers; walls are always solid.
 function Grid:isBlocking(col, row, sizeRatio)
   if self:isBoulderTile(col, row) then
     return true
@@ -1020,13 +1027,11 @@ function Grid:isBlocking(col, row, sizeRatio)
   if self:isPressureDoor(col, row) and not self:isPressureDoorOpen() then
     return true
   end
-  if not self:isWallTile(col, row) then
-    return false
+  -- Side, half, top, behind, front — none are walkable.
+  if self:isWallTile(col, row) then
+    return true
   end
-  if sizeRatio ~= nil and self:canPassHalfWall(col, row, sizeRatio) then
-    return false
-  end
-  return true
+  return false
 end
 
 function Grid:getWallTexture(col, row)
