@@ -36,8 +36,6 @@ local PLAYER_MOVE_FRAME_RANGES = {
 }
 local playerAnimations = {}
 local keySprites
-<<<<<<< HEAD
-=======
 local puddleAnimation
 
 local function getPuddleAnimation()
@@ -59,7 +57,6 @@ local function getPuddleAnimation()
   return puddleAnimation
 end
 
->>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
 local function getKeySprites()
   if keySprites then
     return keySprites
@@ -648,10 +645,14 @@ function Player:update(dt, grid)
   if movement.active then
     movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
     if movement.elapsed >= movement.duration then
-      grid:addWater(movement.toCol, movement.toRow)
+      grid:addPuddleTrail(
+        movement.fromCol,
+        movement.fromRow,
+        movement.toCol,
+        movement.toRow
+      )
       grid:consumeSnowflake(movement.toCol, movement.toRow)
 
-<<<<<<< HEAD
       -- Key halves assemble in-hand; full key opens a key door on contact.
       if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
         if self.heldItem == nil then
@@ -665,26 +666,6 @@ function Player:update(dt, grid)
             self.heldItem = "key"
             self.heldKeyVariant = nil
           end
-=======
-
-  movement.elapsed = math.min(movement.elapsed + dt, movement.duration)
-  if movement.elapsed >= movement.duration then
-    grid:addPuddleTrail(
-      movement.fromCol,
-      movement.fromRow,
-      movement.toCol,
-      movement.toRow
-    )
-    grid:consumeSnowflake(movement.toCol, movement.toRow)
-
-    -- Key halves assemble in-hand; full key opens a key door on contact.
-    if grid:isPuzzlePiece(movement.toCol, movement.toRow) then
-      if self.heldItem == nil then
-        local ok, variant = grid:consumePuzzlePiece(movement.toCol, movement.toRow)
-        if ok then
-          self.heldItem = "key_half"
-          self.heldKeyVariant = variant or "top"
->>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
         end
       elseif self.heldItem == "key" and grid:isPuzzleDoor(movement.toCol, movement.toRow) then
         if grid:openPuzzleDoor(movement.toCol, movement.toRow) then

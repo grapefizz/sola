@@ -7,20 +7,16 @@ local TEXTURE_GRID_SIZE = 1
 local FIRE_FRAME_SIZE = 128
 local FIRE_FRAME_COUNT = 9
 local FIRE_FRAME_DURATION = 1 / 12
-<<<<<<< HEAD
 local DEFAULT_SNOWFLAKE_SECONDS = 3
-=======
 local PUDDLE_FRAME_SIZE = 256
--- One long connecting transition frame followed by the source GIF's 12
--- visible drag frames. Its 15 fully transparent trailing frames are omitted.
-local PUDDLE_FRAME_COUNT = 13
-local PUDDLE_FRAME_DURATION = 1 / 24
+local PUDDLE_FRAME_COUNT = 15
+local PUDDLE_FRAME_DURATION = 1 / 14
 local PUDDLE_ANIMATION_DURATION = PUDDLE_FRAME_COUNT * PUDDLE_FRAME_DURATION
--- The visible water is centered around y=216 in its 256px source frame.
--- Counter this transparent-canvas offset when the strip rotates vertically.
-local PUDDLE_CONTENT_Y_OFFSET = (216 - PUDDLE_FRAME_SIZE * 0.5)
-  / PUDDLE_FRAME_SIZE
->>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
+-- Extra linger after the last drippy pose so the dissolve finishes softly.
+local PUDDLE_FADE_DURATION = 0.35
+local PUDDLE_LIFETIME = PUDDLE_ANIMATION_DURATION + PUDDLE_FADE_DURATION
+-- Visible water sits low in the source frame; keep it centered on the tile.
+local PUDDLE_CONTENT_CENTER_Y = 216
 local tileSprites
 
 Grid.DEFAULT_SNOWFLAKE_SECONDS = DEFAULT_SNOWFLAKE_SECONDS
@@ -50,14 +46,15 @@ local function getTileSprites()
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
+    buttonUnpressed = love.graphics.newImage("assets/Button unpressed.png"),
+    buttonPressed = love.graphics.newImage("assets/PRESSED BUTTON FINA.png"),
+    doorClosed = love.graphics.newImage("assets/door-closed.png"),
+    doorOpen = love.graphics.newImage("assets/door-open.png"),
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
-<<<<<<< HEAD
     wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
-=======
     puddleLong = love.graphics.newImage("assets/puddlelong.png"),
     puddleDrag = love.graphics.newImage("assets/puddledrag-sheet.png"),
->>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -74,11 +71,13 @@ local function getTileSprites()
   tileSprites.boulder:setFilter("linear", "linear")
   tileSprites.boulder2:setFilter("linear", "linear")
   tileSprites.crackedBoulder:setFilter("linear", "linear")
+  tileSprites.buttonUnpressed:setFilter("linear", "linear")
+  tileSprites.buttonPressed:setFilter("linear", "linear")
+  tileSprites.doorClosed:setFilter("linear", "linear")
+  tileSprites.doorOpen:setFilter("linear", "linear")
   tileSprites.wall:setFilter("linear", "linear")
   tileSprites.brickEnd:setFilter("linear", "linear")
-<<<<<<< HEAD
   tileSprites.wallHalf2:setFilter("linear", "linear")
-=======
   tileSprites.puddleLong:setFilter("linear", "linear")
   tileSprites.puddleDrag:setFilter("linear", "linear")
   tileSprites.puddleDragFrames = {}
@@ -91,7 +90,6 @@ local function getTileSprites()
       tileSprites.puddleDrag:getDimensions()
     )
   end
->>>>>>> f57f983 (he was whipping up actual fucking mut in a kettle)
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -428,31 +426,46 @@ end
 function Grid:updatePuddles(dt)
   for key, puddle in pairs(self.puddleTiles) do
     puddle.age = (puddle.age or 0) + dt
-    puddle.elapsed = ((puddle.elapsed or 0) + dt)
-      % PUDDLE_ANIMATION_DURATION
-    if puddle.age >= PUDDLE_ANIMATION_DURATION then
+    puddle.elapsed = math.min(
+      (puddle.elapsed or 0) + dt,
+      PUDDLE_ANIMATION_DURATION
+    )
+    if puddle.age >= PUDDLE_LIFETIME then
       self.puddleTiles[key] = nil
     end
   end
 end
 
-local function puddleFrame(sprites, puddle)
-  local elapsed = math.max(0, puddle.elapsed or 0)
-  local index = math.min(
-    PUDDLE_FRAME_COUNT,
-    math.floor(elapsed / PUDDLE_FRAME_DURATION) + 1
-  )
-  return sprites.puddleDragFrames[index]
+local function puddleAlpha(puddle)
+  local age = puddle.age or 0
+  if age <= PUDDLE_ANIMATION_DURATION then
+    return 1
+  end
+  local t = math.min(1, (age - PUDDLE_ANIMATION_DURATION) / PUDDLE_FADE_DURATION)
+  return 1 - (t * t * (3 - 2 * t))
 end
 
-local function puddleTransform(puddle)
-  -- Keep the artwork upright for horizontal movement. Mirroring instead of
-  -- rotating 180 degrees keeps its wet edge aligned with the player's puddle.
-  if (puddle.dx or 0) > 0 then return 0, -1 end
-  if (puddle.dx or 0) < 0 then return 0, 1 end
-  if (puddle.dy or 0) > 0 then return -math.pi * 0.5, 1 end
-  if (puddle.dy or 0) < 0 then return math.pi * 0.5, 1 end
-  return 0, 1
+-- Crossfade between consecutive sheet frames for a seamless drip dissolve.
+local function puddleFrameBlend(sprites, puddle)
+  local elapsed = math.max(0, puddle.elapsed or 0)
+  local pos = 1 + math.min(1, elapsed / PUDDLE_ANIMATION_DURATION)
+    * (PUDDLE_FRAME_COUNT - 1)
+  local index = math.min(PUDDLE_FRAME_COUNT, math.floor(pos))
+  local frac = pos - index
+  local fromQuad = sprites.puddleDragFrames[index]
+  if index >= PUDDLE_FRAME_COUNT then
+    return fromQuad, fromQuad, 0
+  end
+  local blend = frac * frac * (3 - 2 * frac)
+  return fromQuad, sprites.puddleDragFrames[index + 1], blend
+end
+
+local function puddleMirror(puddle)
+  -- Keep the art floor-oriented for every direction so up/down stays a puddle,
+  -- not a rotated ribbon. Mirror so the drip fingers trail away from the player.
+  if (puddle.dx or 0) > 0 then return -1 end
+  if (puddle.dy or 0) > 0 then return -1 end
+  return 1
 end
 
 local function puddleDirection(puddle)
@@ -460,6 +473,41 @@ local function puddleDirection(puddle)
   local dy = puddle.dy or 0
   return dx == 0 and 0 or (dx > 0 and 1 or -1),
     dy == 0 and 0 or (dy > 0 and 1 or -1)
+end
+
+local function puddleScales(puddle, tileSize, frameWidth, frameHeight)
+  local mirror = puddleMirror(puddle)
+  local directionX, directionY = puddleDirection(puddle)
+  -- Full tile coverage; floor-oriented band stays the natural puddle thickness.
+  local scaleAlong = mirror * tileSize / frameWidth
+  local scaleAcross = tileSize / frameHeight
+  local contentShiftY = (PUDDLE_CONTENT_CENTER_Y / PUDDLE_FRAME_SIZE - 0.5)
+    * frameHeight * scaleAcross
+  return scaleAlong, scaleAcross, directionX, directionY, contentShiftY
+end
+
+local function drawPuddleDrag(sprites, puddle, x, y, scaleAlong, scaleAcross)
+  local fromQuad, toQuad, blend = puddleFrameBlend(sprites, puddle)
+  local alpha = puddleAlpha(puddle)
+  local ox = PUDDLE_FRAME_SIZE * 0.5
+  local oy = PUDDLE_FRAME_SIZE * 0.5
+  if blend <= 0.001 then
+    love.graphics.setColor(1, 1, 1, alpha)
+    love.graphics.draw(
+      sprites.puddleDrag, fromQuad, x, y, 0, scaleAlong, scaleAcross, ox, oy
+    )
+    return
+  end
+  if blend < 0.999 then
+    love.graphics.setColor(1, 1, 1, alpha * (1 - blend))
+    love.graphics.draw(
+      sprites.puddleDrag, fromQuad, x, y, 0, scaleAlong, scaleAcross, ox, oy
+    )
+  end
+  love.graphics.setColor(1, 1, 1, alpha * blend)
+  love.graphics.draw(
+    sprites.puddleDrag, toQuad, x, y, 0, scaleAlong, scaleAcross, ox, oy
+  )
 end
 
 local function eachPuddleBridgeTile(puddle, callback)
@@ -736,7 +784,12 @@ function Grid:isPuzzleCanvas(col, row)
 end
 
 function Grid:hasKeyDoor()
-  return next(self.puzzleDoorTiles) ~= nil
+  for _, door in pairs(self.puzzleDoorTiles) do
+    if not door.open then
+      return true
+    end
+  end
+  return false
 end
 
 -- Tea locks only while key doors remain. Levels with no key doors stay unlocked.
@@ -761,28 +814,33 @@ function Grid:addPuzzleDoor(col, row)
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
   self.pressurePlateTiles[key] = nil
-  self.puzzleDoorTiles[key] = { col = col, row = row }
+  self.puzzleDoorTiles[key] = { col = col, row = row, open = false }
 end
 
 function Grid:removePuzzleDoor(col, row)
   self.puzzleDoorTiles[self:key(col, row)] = nil
 end
 
+-- Closed key doors only (open doors stay drawn but are walkable).
 function Grid:isPuzzleDoor(col, row)
-  return self.puzzleDoorTiles[self:key(col, row)] ~= nil
+  local door = self.puzzleDoorTiles[self:key(col, row)]
+  return door ~= nil and not door.open
 end
 
 function Grid:openPuzzleDoor(col, row)
   local key = self:key(col, row)
-  if self.puzzleDoorTiles[key] then
-    self.puzzleDoorTiles[key] = nil
+  local door = self.puzzleDoorTiles[key]
+  if door and not door.open then
+    door.open = true
     return true
   end
   return false
 end
 
 function Grid:openPuzzleDoors()
-  self.puzzleDoorTiles = {}
+  for _, door in pairs(self.puzzleDoorTiles) do
+    door.open = true
+  end
 end
 
 function Grid:addPressureDoor(col, row)
@@ -838,8 +896,11 @@ end
 
 function Grid:updatePressurePlates(playerCol, playerRow, sizeRatio)
   for _, plate in pairs(self.pressurePlateTiles) do
-    plate.pressed = plate.col == playerCol and plate.row == playerRow
-    if plate.pressed and (sizeRatio or 0) > 0.6 then
+    if not plate.pressed
+      and plate.col == playerCol
+      and plate.row == playerRow
+      and (sizeRatio or 0) > 0.6 then
+      plate.pressed = true
       self.pressureDoorOpen = true
     end
   end
@@ -1861,15 +1922,6 @@ local function drawDoorElevAt(x, floorTop, size, zoom, open, palette)
   end
 end
 
-local PUZZLE_DOOR_PALETTE = {
-  side = { 0.10, 0.18, 0.34 },
-  top = { 0.42, 0.68, 0.95 },
-  face = { 0.10, 0.22, 0.42 },
-  line = { 0.55, 0.78, 1.0 },
-  accent = { 0.70, 0.88, 1.0 },
-  knob = true,
-}
-
 local PRESSURE_DOOR_PALETTE = {
   side = { 0.12, 0.24, 0.16 },
   top = { 0.42, 0.88, 0.62 },
@@ -1880,39 +1932,24 @@ local PRESSURE_DOOR_PALETTE = {
 }
 
 local function drawPuzzleDoorAt(x, y, size, zoom, side, open)
-  if side then
-    -- Caller passes y = floorTop - size (same convention as before).
-    drawDoorElevAt(x, y + size, size, zoom, open, PUZZLE_DOOR_PALETTE)
-    return
-  end
-
-  local pad = size * 0.1
-  local dx = x + pad
-  local dy = y + pad
-  local dw = size - pad * 2
-  local dh = size - pad * 2
-  if open then
-    love.graphics.setColor(0.025, 0.05, 0.08, 0.96)
-    love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.28, 0.62, 0.95, 0.9)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.45, 0.82, 1.0, 0.75)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.line(dx + 4, dy + 4, dx + dw - 4, dy + 4)
-  else
-    love.graphics.setColor(0.06, 0.16, 0.34, 0.98)
-    love.graphics.rectangle("fill", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.28, 0.62, 0.95, 0.95)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", dx, dy, dw, dh, 2, 2)
-    love.graphics.setColor(0.55, 0.80, 1.0, 0.85)
-    love.graphics.setLineWidth(2 / zoom)
-    local barX = dx + dw * 0.5
-    love.graphics.line(barX, dy + 4, barX, dy + dh - 4)
-    love.graphics.line(dx + 4, dy + dh * 0.45, dx + dw - 4, dy + dh * 0.45)
-    love.graphics.circle("fill", barX + dw * 0.18, dy + dh * 0.45, 2.5)
-  end
+  local sprites = getTileSprites()
+  local image = open and sprites.doorOpen or sprites.doorClosed
+  local iw, ih = image:getDimensions()
+  local scale = (size * 0.98) / math.max(iw, ih)
+  local centerX = x + size * 0.5
+  -- Side view: y is floorTop - size. Top-down: center in the tile.
+  local anchorY = side and (y + size) or (y + size * 0.5)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(
+    image,
+    centerX,
+    anchorY,
+    0,
+    scale,
+    scale,
+    iw * 0.5,
+    side and ih or (ih * 0.5)
+  )
 end
 
 local function drawPressureDoorAt(x, y, size, zoom, side, open)
@@ -1949,63 +1986,23 @@ local function drawPressureDoorAt(x, y, size, zoom, side, open)
   end
 end
 
--- Side view: plate is recessed into the floor face; top-down stays a pad on the tile.
-local function drawPressurePlateAt(centerX, centerY, size, zoom, pressed, side, faceH)
-  if side then
-    faceH = faceH or (size * Perspective.FLOOR_FACE)
-    local plateW = size * 0.52
-    local plateH = math.max(4, faceH * 0.78)
-    local px = centerX - plateW * 0.5
-    -- Sink slightly into the brick face so ground flanks read as surrounding stone.
-    local py = centerY + (faceH - plateH) * 0.45
-    love.graphics.setColor(0.06, 0.08, 0.10, 0.98)
-    love.graphics.rectangle("fill", px, py, plateW, plateH, 1, 1)
-    if pressed then
-      love.graphics.setColor(0.28, 0.78, 0.54, 1)
-    else
-      love.graphics.setColor(0.55, 0.64, 0.72, 0.95)
-    end
-    love.graphics.setLineWidth(1.25 / zoom)
-    love.graphics.rectangle("line", px, py, plateW, plateH, 1, 1)
-    love.graphics.setColor(
-      pressed and 0.32 or 0.18,
-      pressed and 0.88 or 0.42,
-      pressed and 0.58 or 0.55,
-      0.95
-    )
-    local inset = math.max(1.5, plateH * 0.18)
-    love.graphics.rectangle(
-      "fill",
-      px + inset,
-      py + inset,
-      plateW - inset * 2,
-      plateH - inset * 2,
-      1,
-      1
-    )
-    love.graphics.setColor(0.82, 0.92, 0.98, 0.75)
-    love.graphics.setLineWidth(1 / zoom)
-    love.graphics.line(centerX - plateW * 0.18, py + plateH * 0.5, centerX + plateW * 0.18, py + plateH * 0.5)
-    return
-  end
-
-  local w = size * 0.72
-  local h = size * 0.22
-  local y = centerY - h * 0.5
-  love.graphics.setColor(0.10, 0.12, 0.15, 0.95)
-  love.graphics.rectangle("fill", centerX - w * 0.5, y, w, h, 2, 2)
-  if pressed then
-    love.graphics.setColor(0.30, 0.82, 0.58, 1)
-  else
-    love.graphics.setColor(0.62, 0.70, 0.76, 0.95)
-  end
-  love.graphics.setLineWidth(1.5 / zoom)
-  love.graphics.rectangle("line", centerX - w * 0.5, y, w, h, 2, 2)
-  love.graphics.setColor(pressed and 0.34 or 0.22, pressed and 0.92 or 0.48, pressed and 0.64 or 0.62, 0.95)
-  love.graphics.rectangle("fill", centerX - w * 0.34, y + h * 0.22, w * 0.68, h * 0.56, 1, 1)
-  love.graphics.setColor(0.82, 0.92, 0.98, 0.8)
-  love.graphics.setLineWidth(1 / zoom)
-  love.graphics.line(centerX - w * 0.22, y + h * 0.5, centerX + w * 0.22, y + h * 0.5)
+local function drawPressurePlateAt(centerX, centerY, size, zoom, pressed, side)
+  local sprites = getTileSprites()
+  local image = pressed and sprites.buttonPressed or sprites.buttonUnpressed
+  local iw, ih = image:getDimensions()
+  local target = size * 0.88
+  local scale = target / math.max(iw, ih)
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(
+    image,
+    centerX,
+    centerY,
+    0,
+    scale,
+    scale,
+    iw * 0.5,
+    side and ih or (ih * 0.5)
+  )
 end
 
 local function getBoulderSprite(sprites, boulder)
@@ -2223,41 +2220,41 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
   for _, puddle in pairs(self.puddleTiles) do
     if isVisible(puddle) and include(puddle.col, puddle.row) then
       local x, y = self:tileOrigin(puddle.col, puddle.row)
-      local angle, directionScale = puddleTransform(puddle)
-      local directionX, directionY = puddleDirection(puddle)
-      local overlap = self.size * 0.06
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(
-        sprites.puddleDrag,
-        puddleFrame(sprites, puddle),
-        x + self.size * 0.5
-          + directionX * overlap
-          - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
-        y + self.size * 0.5 + directionY * overlap,
-        angle,
-        directionScale * self.size * 1.12 / PUDDLE_FRAME_SIZE,
-        self.size / PUDDLE_FRAME_SIZE,
-        PUDDLE_FRAME_SIZE * 0.5,
-        PUDDLE_FRAME_SIZE * 0.5
+      local scaleAlong, scaleAcross, directionX, directionY, contentShiftY =
+        puddleScales(puddle, self.size, PUDDLE_FRAME_SIZE, PUDDLE_FRAME_SIZE)
+      local overlap = self.size * 0.08
+      drawPuddleDrag(
+        sprites,
+        puddle,
+        x + self.size * 0.5 + directionX * overlap,
+        y + self.size * 0.5 + directionY * overlap - contentShiftY,
+        scaleAlong,
+        scaleAcross
       )
+      local bridgeAlpha = puddleAlpha(puddle)
       eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
         if include(bridgeCol, bridgeRow) then
           local bridgeX, bridgeY = self:tileOrigin(bridgeCol, bridgeRow)
+          local longW = sprites.puddleLong:getWidth()
+          local longH = sprites.puddleLong:getHeight()
+          local bAlong, bAcross, _, _, bShiftY =
+            puddleScales(puddle, self.size, longW, longH)
+          love.graphics.setColor(1, 1, 1, bridgeAlpha)
           love.graphics.draw(
             sprites.puddleLong,
-            bridgeX + self.size * 0.5
-              - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
-            bridgeY + self.size * 0.5,
-            angle,
-            directionScale * self.size * 1.12 / sprites.puddleLong:getWidth(),
-            self.size / sprites.puddleLong:getHeight(),
-            sprites.puddleLong:getWidth() * 0.5,
-            sprites.puddleLong:getHeight() * 0.5
+            bridgeX + self.size * 0.5,
+            bridgeY + self.size * 0.5 - bShiftY,
+            0,
+            bAlong,
+            bAcross,
+            longW * 0.5,
+            longH * 0.5
           )
         end
       end)
     end
   end
+  love.graphics.setColor(1, 1, 1, 1)
 
   -- Behind full walls get an inset ground pad; all walls retain their ground tile.
   local behindPad = math.max(8, math.floor(self.size * 0.18))
@@ -2360,7 +2357,7 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
   for _, door in pairs(self.puzzleDoorTiles) do
     if isVisible(door) and include(door.col, door.row) then
       local x, y = self:tileOrigin(door.col, door.row)
-      drawPuzzleDoorAt(x, y, self.size, zoom, false, false)
+      drawPuzzleDoorAt(x, y, self.size, zoom, false, door.open)
     end
   end
 
@@ -2771,30 +2768,15 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
     end
 
     -- 2) Floor strip — in side view, side/half walls still sit on brick.
-    --    Pressure plates cut the middle out so the plate sits in the ground.
     for col = minCol, maxCol do
       if self:hasGround(col, row) and include(col, row) then
-        local hasPlate = self.pressurePlateTiles[self:key(col, row)] ~= nil
         local floorKind = "ground"
         if self:isIceTile(col, row) then
           floorKind = "ice"
         elseif self:isMossTile(col, row) then
           floorKind = "moss"
         end
-        drawFloorCell(col, row, floorKind, hasPlate)
-        if hasPlate then
-          local floorTop = cellFloorTop(col, row)
-          local centerX = (col - 0.5) * size
-          drawPressurePlateAt(
-            centerX,
-            floorTop,
-            size,
-            zoom,
-            self.pressurePlateTiles[self:key(col, row)].pressed,
-            true,
-            faceH
-          )
-        end
+        drawFloorCell(col, row, floorKind, false)
       end
     end
 
@@ -2802,17 +2784,8 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       if self:hasGround(col, row) and include(col, row) and self:isInFireZone(col, row) then
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
-        local hasPlate = self.pressurePlateTiles[self:key(col, row)] ~= nil
-        if hasPlate then
-          local plateW = size * 0.52
-          local flank = (size - plateW) * 0.5
-          love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
-          love.graphics.rectangle("fill", x + 1, floorTop, flank - 1, faceH - 1)
-          love.graphics.rectangle("fill", x + flank + plateW, floorTop, flank - 1, faceH - 1)
-        else
-          love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
-          love.graphics.rectangle("fill", x + 1, floorTop, size - 2, faceH - 1)
-        end
+        love.graphics.setColor(0.75, 0.25, 0.08, 0.28)
+        love.graphics.rectangle("fill", x + 1, floorTop, size - 2, faceH - 1)
       end
     end
 
@@ -2821,42 +2794,42 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
         local puddle = self.puddleTiles[self:key(col, row)]
         local x = (col - 1) * size
         local floorTop = cellFloorTop(col, row)
-        local angle, directionScale = puddleTransform(puddle)
-        local directionX, directionY = puddleDirection(puddle)
-        local overlap = size * 0.06
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(
-          sprites.puddleDrag,
-          puddleFrame(sprites, puddle),
-          x + size * 0.5
-            + directionX * overlap
-            - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
-          floorTop - size * 0.5 + directionY * overlap,
-          angle,
-          directionScale * size * 1.12 / PUDDLE_FRAME_SIZE,
-          size / PUDDLE_FRAME_SIZE,
-          PUDDLE_FRAME_SIZE * 0.5,
-          PUDDLE_FRAME_SIZE * 0.5
+        local scaleAlong, scaleAcross, directionX, directionY, contentShiftY =
+          puddleScales(puddle, size, PUDDLE_FRAME_SIZE, PUDDLE_FRAME_SIZE)
+        local overlap = size * 0.08
+        drawPuddleDrag(
+          sprites,
+          puddle,
+          x + size * 0.5 + directionX * overlap,
+          floorTop - size * 0.5 + directionY * overlap - contentShiftY,
+          scaleAlong,
+          scaleAcross
         )
+        local bridgeAlpha = puddleAlpha(puddle)
         eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
           if include(bridgeCol, bridgeRow) then
             local bridgeX = (bridgeCol - 1) * size
             local bridgeFloorTop = cellFloorTop(bridgeCol, bridgeRow)
+            local longW = sprites.puddleLong:getWidth()
+            local longH = sprites.puddleLong:getHeight()
+            local bAlong, bAcross, _, _, bShiftY =
+              puddleScales(puddle, size, longW, longH)
+            love.graphics.setColor(1, 1, 1, bridgeAlpha)
             love.graphics.draw(
               sprites.puddleLong,
-              bridgeX + size * 0.5
-                - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
-              bridgeFloorTop - size * 0.5,
-              angle,
-              directionScale * size * 1.12 / sprites.puddleLong:getWidth(),
-              size / sprites.puddleLong:getHeight(),
-              sprites.puddleLong:getWidth() * 0.5,
-              sprites.puddleLong:getHeight() * 0.5
+              bridgeX + size * 0.5,
+              bridgeFloorTop - size * 0.5 - bShiftY,
+              0,
+              bAlong,
+              bAcross,
+              longW * 0.5,
+              longH * 0.5
             )
           end
         end)
       end
     end
+    love.graphics.setColor(1, 1, 1, 1)
 
     -- 3) Front-layer front / half / cracked walls
     for col = minCol, maxCol do
@@ -2898,6 +2871,17 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
         )
       end
 
+      if self.pressurePlateTiles[key] then
+        drawPressurePlateAt(
+          centerX,
+          floorTop,
+          size,
+          zoom,
+          self.pressurePlateTiles[key].pressed,
+          true
+        )
+      end
+
       if self.teaTiles[key] then
         drawTeaCup(centerX, floorTop, zoom, true)
        end
@@ -2916,7 +2900,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
        if self.puzzleDoorTiles[key] then
          local x = (col - 1) * size
          local y = floorTop - size
-         drawPuzzleDoorAt(x, y, size, zoom, true, false)
+         drawPuzzleDoorAt(x, y, size, zoom, true, self.puzzleDoorTiles[key].open)
        end
 
       local boulder = self.boulderTiles[key]

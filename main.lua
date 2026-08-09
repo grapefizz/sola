@@ -167,10 +167,31 @@ local function playerPerspectiveMode()
   return Perspective.mode
 end
 
+local CAMPAIGN_LEVEL_COUNT = 10
+
+local function allCampaignLevelsFinished()
+  for i = 1, CAMPAIGN_LEVEL_COUNT do
+    if not progress.finished["level" .. i] then
+      return false
+    end
+  end
+  return true
+end
+
+local function updateEditorUnlock()
+  for _, item in ipairs(menu) do
+    if item.id == "editor" then
+      item.locked = not allCampaignLevelsFinished()
+      break
+    end
+  end
+end
+
 local function loadProgress()
   progress.finished = {}
   local data = love.filesystem.read(PROGRESS_FILE)
   if not data then
+    updateEditorUnlock()
     return
   end
   for line in data:gmatch("[^\r\n]+") do
@@ -179,6 +200,7 @@ local function loadProgress()
       progress.finished[name] = true
     end
   end
+  updateEditorUnlock()
 end
 
 local function saveProgress()
@@ -198,6 +220,7 @@ local function markLevelFinished(name)
   end
   progress.finished[name] = true
   saveProgress()
+  updateEditorUnlock()
 end
 
 -- Level 1 is always open; each later level unlocks after finishing the previous one.
@@ -837,7 +860,8 @@ local function activate(item)
   if not item then
     return
   end
-  -- Level Editor stays visually locked (padlock) but still opens
+  -- Level Editor keeps a padlock until all campaign levels are finished,
+  -- but still opens so it can be used early.
   if item.locked and item.id ~= "editor" then
     playSfx(sfxClick)
     bumpShake(2.5, 0.12)
