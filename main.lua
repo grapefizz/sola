@@ -407,7 +407,8 @@ local function restartRun()
     grid:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
     grid:removeWall(SPAWN_COL, SPAWN_ROW)
   end
-  player = Player.new(SPAWN_COL, SPAWN_ROW)
+  local timeLimit = editor and editor:getLevelTime() or 40
+  player = Player.new(SPAWN_COL, SPAWN_ROW, timeLimit)
   local cameraX, cameraY = grid:tileCenter(player.col, player.row)
   camera = Camera.new(cameraX, cameraY, 2)
   cameraFollowX, cameraFollowY = cameraX, cameraY

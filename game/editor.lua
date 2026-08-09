@@ -17,6 +17,8 @@ local DROPDOWN_ITEM_H = 28
 local DROPDOWN_MAX_VISIBLE = 8
 local HUD_FONT_SIZE = 14
 local NAME_MAX_LEN = 24
+local DEFAULT_LEVEL_TIME = 40
+local MAX_LEVEL_TIME = 999
 local LEGEND_H = 132
 
 -- Single source of truth: add a tile tool here (+ applyTool / grid draw)
@@ -42,6 +44,7 @@ local TOOLS = {
   { name = "perspective", label = "Side Zone", icon = "perspective" },
   { name = "save", label = "Save", icon = "save" },
   { name = "load", label = "Load", icon = "load" },
+  { name = "time_limit", label = "Time Limit", icon = "time_limit" },
 }
 
 local TOOL_BUTTON_COUNT = #TOOLS
@@ -448,6 +451,14 @@ local function drawActionIcon(kind, size)
     love.graphics.line(x + w * 0.24, y + w * 0.46, x + w * 0.76, y + w * 0.46)
     love.graphics.line(x + w * 0.50, y + w * 0.46, x + w * 0.50, y + w * 0.74)
     love.graphics.circle("fill", x + w * 0.67, y + w * 0.58, w * 0.08)
+  elseif kind == "time_limit" then
+    love.graphics.setColor(0.18, 0.52, 0.82, 1)
+    love.graphics.circle("fill", x + w * 0.5, y + w * 0.5, w * 0.42)
+    love.graphics.setColor(0.88, 0.96, 1, 1)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.circle("line", x + w * 0.5, y + w * 0.5, w * 0.42)
+    love.graphics.line(x + w * 0.5, y + w * 0.5, x + w * 0.5, y + w * 0.25)
+    love.graphics.line(x + w * 0.5, y + w * 0.5, x + w * 0.70, y + w * 0.62)
   end
 end
 
@@ -578,6 +589,10 @@ local function levelPath(name)
   return LEVELS_DIR .. "/" .. name .. ".txt"
 end
 
+local function levelTimePath(name)
+  return LEVELS_DIR .. "/" .. name .. ".time"
+end
+
 local function listLevelNames()
   ensureLevelsDir()
   local seen = {}
@@ -661,6 +676,48 @@ local function readLevelFile(path)
   return nil, message
 end
 
+function Editor:getLevelTime()
+  return self.levelTime or DEFAULT_LEVEL_TIME
+end
+
+function Editor:openTimeEditor()
+  self.loadDropdownOpen = false
+  self.paintingButton = nil
+  self.namingOpen = true
+  self.timeEditing = true
+  self.namingText = tostring(self:getLevelTime())
+  self.namingCursorBlink = 0
+
+  if love.keyboard.setTextInput then
+    love.keyboard.setTextInput(true)
+  end
+end
+
+function Editor:confirmTime()
+  local value = tonumber(self.namingText)
+
+  if not value or value < 0 or value > MAX_LEVEL_TIME or value ~= math.floor(value) then
+    self:setStatus("Time must be 0–999 seconds")
+    return
+  end
+
+  self.levelTime = value
+  self:closeNaming()
+
+  if self.currentLevelName then
+    local success, message = writeLevelFile(
+      levelTimePath(self.currentLevelName),
+      tostring(self.levelTime)
+    )
+    if not success then
+      self:setStatus("Time save failed: " .. tostring(message))
+      return
+    end
+  end
+
+  self:setStatus("Time limit: " .. self.levelTime .. "s")
+end
+
 local function buttonY(index)
   return 18 + (index - 1) * BUTTON_GAP
 end
@@ -708,6 +765,8 @@ function Editor.new(spawnCol, spawnRow)
     rectangle = nil,
     namingOpen = false,
     namingText = "",
+    timeEditing = false,
+    levelTime = DEFAULT_LEVEL_TIME,
     namingCursorBlink = 0,
   }, Editor)
 end
@@ -729,6 +788,7 @@ end
 function Editor:closeNaming()
   self.namingOpen = false
   self.namingText = ""
+  self.timeEditing = false
   self.namingCursorBlink = 0
 
   if love.keyboard.setTextInput then
@@ -903,6 +963,14 @@ function Editor:confirmSave(grid)
   local success, message = writeLevelFile(path, data)
 
   if success then
+    local timeSuccess, timeMessage = writeLevelFile(
+      levelTimePath(name),
+      tostring(self:getLevelTime())
+    )
+    if not timeSuccess then
+      self:setStatus("Time save failed: " .. tostring(timeMessage))
+      return
+    end
     self.currentLevelName = name
     self:setStatus("Saved")
     self:refreshLoadOptions()
@@ -925,6 +993,13 @@ function Editor:loadLevel(grid, name)
 
   grid:load(contents)
   self:protectSpawn(grid)
+  local timeContents = readLevelFile(levelTimePath(name))
+  local loadedTime = tonumber(timeContents)
+  if loadedTime and loadedTime >= 0 and loadedTime <= MAX_LEVEL_TIME then
+    self.levelTime = math.floor(loadedTime)
+  else
+    self.levelTime = DEFAULT_LEVEL_TIME
+  end
   self.currentLevelName = name
   self.loadDropdownOpen = false
   self.paintingButton = nil
@@ -1073,7 +1148,11 @@ function Editor:mousepressed(x, y, button, grid, camera)
       local action = self:hitNamingButton(x, y)
 
       if action == "save" then
-        self:confirmSave(grid)
+        if self.timeEditing then
+          self:confirmTime()
+        else
+          self:confirmSave(grid)
+        end
       elseif action == "cancel" then
         self:closeNaming()
       end
@@ -1106,6 +1185,9 @@ function Editor:mousepressed(x, y, button, grid, camera)
         self.loadDropdownOpen = false
         self.tool = "perspective"
         self:setStatus("Side Zone · paint regions for side view + jump (V = preview mode)")
+      elseif entry.name == "time_limit" then
+        self.loadDropdownOpen = false
+        self:openTimeEditor()
       else
         self.loadDropdownOpen = false
         self.tool = entry.name
@@ -1195,6 +1277,17 @@ function Editor:textinput(text)
 
   text = text:gsub("[\r\n\t]", "")
 
+  if self.timeEditing then
+    text = text:gsub("%D", "")
+    if text == "" then
+      return
+    end
+    local nextText = (self.namingText .. text):gsub("%D", "")
+    nextText = nextText:sub(-3)
+    self.namingText = nextText
+    return
+  end
+
   if text == "" then
     return
   end
@@ -1208,7 +1301,11 @@ function Editor:keypressed(key, grid, camera)
     if (key == "s" and controlIsDown())
       or key == "return"
       or key == "kpenter" then
-      self:confirmSave(grid)
+      if self.timeEditing then
+        self:confirmTime()
+      else
+        self:confirmSave(grid)
+      end
 
     elseif key == "escape" then
       self:closeNaming()
@@ -1276,6 +1373,9 @@ function Editor:keypressed(key, grid, camera)
     self.tool = "puzzle_door"
     self.loadDropdownOpen = false
     self:setStatus("Puzzle door · opens only when the puzzle canvas is complete")
+  elseif key == "t" then
+    self.loadDropdownOpen = false
+    self:openTimeEditor()
   elseif key == "6" then
     self.tool = "side_wall"
     self.loadDropdownOpen = false
@@ -1357,6 +1457,7 @@ function Editor:keypressed(key, grid, camera)
     grid:clear()
     self.loadDropdownOpen = false
     self.currentLevelName = nil
+    self.levelTime = DEFAULT_LEVEL_TIME
     self:setStatus("New blank level")
 
   elseif key == "f" then
@@ -1618,6 +1719,8 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.20, 0.52, 0.58, 0.95)
        elseif tool.name == "pressure_door" then
          love.graphics.setColor(0.16, 0.48, 0.34, 0.95)
+      elseif tool.name == "time_limit" then
+        love.graphics.setColor(0.16, 0.48, 0.76, 0.95)
       elseif tool.name == "puzzle_door" then
          love.graphics.setColor(0.28, 0.30, 0.58, 0.95)
       elseif tool.name == "side_wall" then
@@ -1971,7 +2074,7 @@ function Editor:draw(grid, camera)
     )
 
     love.graphics.print(
-      "Name this level",
+      self.timeEditing and "Set time limit" or "Name this level",
       nx + 16,
       ny + 14
     )
@@ -2017,6 +2120,9 @@ function Editor:draw(grid, camera)
     )
 
     local display = self.namingText
+    if self.timeEditing then
+      display = display .. "s"
+    end
 
     love.graphics.setColor(
       0.92,
@@ -2084,8 +2190,8 @@ function Editor:draw(grid, camera)
     )
 
     love.graphics.print(
-      "Save",
-      saveX + 28,
+      self.timeEditing and "Set" or "Save",
+      saveX + (self.timeEditing and 32 or 28),
       saveY + 6
     )
 

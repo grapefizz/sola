@@ -8,7 +8,7 @@ local ICE_MOVE_DURATION = MOVE_DURATION / 1.25
 local SMASH_SPEED_FACTOR = 1.05
 local PLAYER_FRAME_SIZE = 128
 local PLAYER_FRAME_DURATION = 1 / 12
-local MELT_TIME = 30
+local MELT_TIME = 40
 
 local PLAYER_SHEET_PATHS = {
   idle = "assets/player-sheet.png",
@@ -146,12 +146,14 @@ local function directionFromKey(key)
   return nil, nil
 end
 
-function Player.new(col, row)
+function Player.new(col, row, timeLimit)
+  timeLimit = tonumber(timeLimit) or MELT_TIME
+  timeLimit = math.max(0, math.min(999, math.floor(timeLimit)))
   return setmetatable({
     col = col,
     row = row,
-    timeRemaining = MELT_TIME,
-    maxTime = MELT_TIME,
+    timeRemaining = timeLimit,
+    maxTime = timeLimit,
     startSize = 42,
     dead = false,
     won = false,
