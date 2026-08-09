@@ -105,7 +105,7 @@ function Player.new(col, row)
     row = row,
     timeRemaining = MELT_TIME,
     maxTime = MELT_TIME,
-    startSize = 30,
+    startSize = 42,
     dead = false,
     won = false,
     heldItem = nil, -- "puzzle_piece" or nil (one at a time)
