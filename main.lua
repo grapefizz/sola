@@ -46,6 +46,8 @@ local levelSlide = {}
 local levelScroll = 0 -- row offset for card grid
 local levelIntro = 0
 local currentLevelName = nil
+local fridgeTransition = nil
+local FRIDGE_FADE_DURATION = 0.55
 local playOverlay = nil -- nil | "complete" | "dead" | "pause"
 local overlayReason = nil -- nil | "burned" | "melted"
 local overlaySelected = 1
@@ -275,6 +277,7 @@ local function buildLevelPreview(name)
   snap:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
   snap:removePressureDoor(SPAWN_COL, SPAWN_ROW)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
+  snap:addFridge(SPAWN_COL, SPAWN_ROW)
 
   local worldW, worldH = snap:worldBounds()
   local scale = math.min(pw / worldW, ph / worldH)
@@ -453,6 +456,17 @@ local function closePlayOverlay()
   overlayHover = 0
 end
 
+local function spawnPlayerAt(col, row)
+  col = col or SPAWN_COL
+  row = row or SPAWN_ROW
+  local timeLimit = editor and editor:getLevelTime() or 40
+  player = Player.new(col, row, timeLimit)
+  local cameraX, cameraY = grid:tileCenter(col, row)
+  camera = Camera.new(cameraX, cameraY, GAMEPLAY_MIN_ZOOM)
+  cameraFollowX, cameraFollowY = cameraX, cameraY
+  cameraPerspective = playerPerspectiveMode()
+end
+
 local function restartRun()
   grid:clearPuddles()
   if currentLevelName and editor then
@@ -467,13 +481,9 @@ local function restartRun()
     grid:removePuzzleCanvas(SPAWN_COL, SPAWN_ROW)
     grid:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
     grid:removeWall(SPAWN_COL, SPAWN_ROW)
+    grid:addFridge(SPAWN_COL, SPAWN_ROW)
   end
-  local timeLimit = editor and editor:getLevelTime() or 40
-  player = Player.new(SPAWN_COL, SPAWN_ROW, timeLimit)
-  local cameraX, cameraY = grid:tileCenter(player.col, player.row)
-  camera = Camera.new(cameraX, cameraY, GAMEPLAY_MIN_ZOOM)
-  cameraFollowX, cameraFollowY = cameraX, cameraY
-  cameraPerspective = playerPerspectiveMode()
+  spawnPlayerAt(SPAWN_COL, SPAWN_ROW)
   playOverlay = nil
   overlayReason = nil
   overlayIntro = 0
@@ -485,6 +495,7 @@ local function startPlay(openEditor, levelName)
   currentLevelName = nil
 
   if openEditor then
+    editor:protectSpawn(grid)
     player = Player.new(SPAWN_COL, SPAWN_ROW)
     local cameraX, cameraY = grid:tileCenter(SPAWN_COL, SPAWN_ROW)
     camera = Camera.new(cameraX, cameraY, 2)
@@ -528,6 +539,95 @@ local function startNextLevel()
   state = "play"
   startPlay(false, name)
   return true
+end
+
+local function beginFridgeTransition()
+  if fridgeTransition or not player or not player.inFridge then
+    return false
+  end
+  if currentLevelName then
+    markLevelFinished(currentLevelName)
+  end
+  local name, index = nextLevelInfo()
+  if not name then
+    player.inFridge = false
+    player.won = true
+    return false
+  end
+  fridgeTransition = {
+    phase = "out",
+    elapsed = 0,
+    nextName = name,
+    nextIndex = index,
+  }
+  return true
+end
+
+local function updateFridgeTransition(dt)
+  local transition = fridgeTransition
+  if not transition then
+    return false
+  end
+
+  transition.elapsed = math.min(
+    FRIDGE_FADE_DURATION,
+    transition.elapsed + dt
+  )
+  if transition.elapsed < FRIDGE_FADE_DURATION then
+    return true
+  end
+
+  if transition.phase == "out" then
+    local name = transition.nextName
+    local index = transition.nextIndex
+    startPlay(false, name)
+    levelSelected = index
+    spawnPlayerAt(SPAWN_COL, SPAWN_ROW)
+    player.inFridge = false
+    transition.phase = "in"
+    transition.elapsed = 0
+    love.window.setTitle("Ice Cube — " .. prettyLevelName(name))
+    return true
+  end
+
+  fridgeTransition = nil
+  return false
+end
+
+local function fridgeFadeAlpha()
+  if not fridgeTransition then
+    return 0
+  end
+  local progressValue = math.min(
+    1,
+    fridgeTransition.elapsed / FRIDGE_FADE_DURATION
+  )
+  if fridgeTransition.phase == "out" then
+    return progressValue
+  end
+  return 1 - progressValue
+end
+
+local function drawFridgeFade(width, height)
+  local fade = fridgeFadeAlpha()
+  if fade <= 0 or not player or not grid or not camera then
+    return
+  end
+
+  local worldX, worldY = grid:tileCenter(player.col, player.row)
+  local centerX, centerY = camera:worldToScreen(worldX, worldY)
+  local windowSize = grid.size * camera.zoom * 4
+  local left = centerX - windowSize * 0.5
+  local top = centerY - windowSize * 0.5
+  local right = centerX + windowSize * 0.5
+  local bottom = centerY + windowSize * 0.5
+
+  love.graphics.setColor(0, 0, 0, fade)
+  love.graphics.rectangle("fill", 0, 0, width, math.max(0, top))
+  love.graphics.rectangle("fill", 0, math.min(height, bottom), width, math.max(0, height - bottom))
+  love.graphics.rectangle("fill", 0, math.max(0, top), math.max(0, left), math.max(0, math.min(height, bottom) - math.max(0, top)))
+  love.graphics.rectangle("fill", math.min(width, right), math.max(0, top), math.max(0, width - right), math.max(0, math.min(height, bottom) - math.max(0, top)))
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 local function clamp(v, a, b)
@@ -1265,8 +1365,15 @@ local function updatePlayScreen(dt, width, height)
     return
   end
 
+  if updateFridgeTransition(dt) then
+    return
+  end
+
   if playOverlay ~= "pause" then
     player:update(dt, grid)
+    if player.inFridge and beginFridgeTransition() then
+      return
+    end
     local drawCol, drawRow = player:getDrawState()
     local cameraX, cameraY = grid:tileCenter(drawCol, drawRow)
     local perspectiveMode = playerPerspectiveMode()
@@ -1284,7 +1391,7 @@ local function updatePlayScreen(dt, width, height)
   end
 
   if not playOverlay then
-    -- Reaching the iced-tea goal is the only completion condition.
+    -- Iced tea and level fridges both complete the current level.
     if player.won then
       if currentLevelName and not progress.finished[currentLevelName] then
         markLevelFinished(currentLevelName)
@@ -1490,8 +1597,8 @@ local function drawMenuTitle(width, height)
   local x = menuAnchorX(width)
   local bob = math.sin(elapsed * 1.4) * 2.5
   local a = e * titlePulse
-  local maxWidth = bw * 1.12
-  local maxHeight = math.min(180, height * 0.22)
+  local maxWidth = bw * 1.45
+  local maxHeight = math.min(280, height * 0.34)
   local scale = math.min(
     maxWidth / menuTitleWidth,
     maxHeight / menuTitleHeight
@@ -1857,6 +1964,7 @@ function love.draw()
       player:drawHud(grid)
       drawPlayOverlay(width, height)
     end
+    drawFridgeFade(width, height)
     return
   end
 
@@ -1975,6 +2083,9 @@ function love.keypressed(key)
       end
     end
   elseif state == "play" then
+    if fridgeTransition then
+      return
+    end
     if editor.active and editor.namingOpen then
       editor:keypressed(key, grid, camera)
       return
@@ -2074,6 +2185,9 @@ end
 
 function love.mousepressed(x, y, button)
   if state == "play" then
+    if fridgeTransition then
+      return
+    end
     if playOverlay and not editor.active and button == 1 then
       local width, height = love.graphics.getDimensions()
       local hit = overlayItemHit(x, y, width, height)
