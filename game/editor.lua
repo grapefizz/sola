@@ -38,6 +38,7 @@ local TOOLS = {
   { name = "half_wall", label = "Half Wall", icon = "tile" },
   { name = "cracked_wall", label = "Cracked Wall", icon = "tile" },
   { name = "boulder", label = "Boulder", icon = "tile" },
+  { name = "boulder2", label = "Boulder 2", icon = "tile" },
   { name = "cracked_boulder", label = "Cracked Boulder", icon = "tile" },
   { name = "erase", label = "Erase", icon = "erase" },
   { name = "perspective", label = "Side Zone", icon = "perspective" },
@@ -76,6 +77,9 @@ local function getPreviewSprites()
     fire = love.graphics.newImage("assets/fire.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
+    boulder = love.graphics.newImage("assets/rock.png"),
+    boulder2 = love.graphics.newImage("assets/rock2.png"),
+    crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
   }
   previewSprites.ground:setFilter("linear", "linear")
   previewSprites.ice:setFilter("linear", "linear")
@@ -83,6 +87,9 @@ local function getPreviewSprites()
   previewSprites.fire:setFilter("linear", "linear")
   previewSprites.keyTop:setFilter("linear", "linear")
   previewSprites.keyDown:setFilter("linear", "linear")
+  previewSprites.boulder:setFilter("linear", "linear")
+  previewSprites.boulder2:setFilter("linear", "linear")
+  previewSprites.crackedBoulder:setFilter("linear", "linear")
   return previewSprites
 end
 
@@ -284,33 +291,17 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     withAlpha(0.78, 0.58, 0.42, 0.9, alpha)
     love.graphics.setLineWidth(1)
     love.graphics.rectangle("line", x + 1, wallY, size - 2, wallH, 2, 2)
-  elseif tool == "boulder" or tool == "cracked_boulder" then
-    local pad = size * 0.12
-    local bx = x + pad
-    local by = y + pad
-    local bsize = size - pad * 2
-    if tool == "cracked_boulder" then
-      withAlpha(0.36, 0.34, 0.32, 0.98, alpha)
-    else
-      withAlpha(0.42, 0.40, 0.38, 0.98, alpha)
+  elseif tool == "boulder" or tool == "boulder2" or tool == "cracked_boulder" then
+    local image = sprites.boulder
+    if tool == "boulder2" then
+      image = sprites.boulder2
+    elseif tool == "cracked_boulder" then
+      image = sprites.crackedBoulder
     end
-    love.graphics.rectangle("fill", bx, by, bsize, bsize, 5, 5)
-    withAlpha(0.62, 0.60, 0.56, 0.9, alpha)
-    love.graphics.setLineWidth(1.5)
-    love.graphics.rectangle("line", bx, by, bsize, bsize, 5, 5)
-    if tool == "cracked_boulder" then
-      withAlpha(0.12, 0.10, 0.08, 0.95, alpha)
-      love.graphics.setLineWidth(2)
-      love.graphics.line(
-        bx + bsize * 0.2, by + bsize * 0.15,
-        bx + bsize * 0.45, by + bsize * 0.48,
-        bx + bsize * 0.22, by + bsize * 0.85
-      )
-      love.graphics.line(
-        bx + bsize * 0.45, by + bsize * 0.48,
-        bx + bsize * 0.82, by + bsize * 0.35
-      )
-    end
+    local targetSize = size * 0.98
+    local scale = targetSize / math.max(image:getWidth(), image:getHeight())
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(image, cx, cy, 0, scale, scale, image:getWidth() / 2, image:getHeight() / 2)
   elseif tool == "erase" then
     withAlpha(0.95, 0.25, 0.3, 0.85, alpha)
     love.graphics.setLineWidth(2.5)
@@ -376,6 +367,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addWall(col, row, "front", nil, { cracked = true, depth = wallDepth })
   elseif tool == "boulder" then
     grid:addBoulder(col, row)
+  elseif tool == "boulder2" then
+    grid:addBoulder(col, row, { variant = 2 })
   elseif tool == "cracked_boulder" then
     grid:addBoulder(col, row, { cracked = true })
   elseif tool == "perspective" then
@@ -1418,6 +1411,9 @@ function Editor:keypressed(key, grid, camera)
   elseif key == "9" then
     self.tool = "boulder"
     self.loadDropdownOpen = false
+  elseif key == "b" then
+    self.tool = "boulder2"
+    self.loadDropdownOpen = false
   elseif key == "-" then
     self.tool = "cracked_boulder"
     self.loadDropdownOpen = false
@@ -1747,6 +1743,8 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.42, 0.28, 0.20, 0.95)
       elseif tool.name == "boulder" then
         love.graphics.setColor(0.45, 0.43, 0.40, 0.95)
+      elseif tool.name == "boulder2" then
+        love.graphics.setColor(0.52, 0.51, 0.58, 0.95)
       elseif tool.name == "cracked_boulder" then
         love.graphics.setColor(0.34, 0.32, 0.30, 0.95)
       elseif tool.name == "perspective" then
@@ -1986,7 +1984,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Key Half  ·  U Pressure Door  ·  = Key Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  - Cracked Boulder  ·  0 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Key Half  ·  U Pressure Door  ·  = Key Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  B Boulder 2  ·  - Cracked Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,

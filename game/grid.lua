@@ -23,6 +23,9 @@ local function getTileSprites()
     fire = love.graphics.newImage("assets/fire-sheet.png"),
     keyTop = love.graphics.newImage("assets/key-top.png"),
     keyDown = love.graphics.newImage("assets/key-down.png"),
+    boulder = love.graphics.newImage("assets/rock.png"),
+    boulder2 = love.graphics.newImage("assets/rock2.png"),
+    crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -30,6 +33,9 @@ local function getTileSprites()
   tileSprites.fire:setFilter("linear", "linear")
   tileSprites.keyTop:setFilter("linear", "linear")
   tileSprites.keyDown:setFilter("linear", "linear")
+  tileSprites.boulder:setFilter("linear", "linear")
+  tileSprites.boulder2:setFilter("linear", "linear")
+  tileSprites.crackedBoulder:setFilter("linear", "linear")
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -793,6 +799,7 @@ function Grid:addBoulder(col, row, options)
     col = col,
     row = row,
     cracked = options.cracked and true or false,
+    variant = options.variant == 2 and 2 or 1,
   }
 end
 
@@ -979,14 +986,22 @@ function Grid:serialize()
         cells[col] = (self:getKeyVariant(col, row) == "down") and "M" or "J"
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
-        cells[col] = boulder.cracked and "Q" or "O"
+        if boulder.cracked then
+          cells[col] = "Q"
+        else
+          cells[col] = boulder.variant == 2 and "m" or "O"
+        end
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
         cells[col] = "S"
       elseif self:isBoulderTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
-        cells[col] = boulder.cracked and "P" or "B"
+        if boulder.cracked then
+          cells[col] = "P"
+        else
+          cells[col] = boulder.variant == 2 and "M" or "B"
+        end
       elseif self:isWallTile(col, row) then
         local wall = self.wallTiles[self:key(col, row)]
         local lean = wall.lean or "left"
@@ -1069,6 +1084,9 @@ function Grid:load(serialized)
       elseif cell == "O" then
         self:addIce(col, row)
         self:addBoulder(col, row)
+      elseif cell == "m" then
+        self:addIce(col, row)
+        self:addBoulder(col, row, { variant = 2 })
       elseif cell == "Q" then
         self:addIce(col, row)
         self:addBoulder(col, row, { cracked = true })
@@ -1100,6 +1118,8 @@ function Grid:load(serialized)
         self:addPuzzlePiece(col, row, "down")
       elseif cell == "B" then
         self:addBoulder(col, row)
+      elseif cell == "M" then
+        self:addBoulder(col, row, { variant = 2 })
       elseif cell == "P" then
         self:addBoulder(col, row, { cracked = true })
       elseif cell == "W" then
@@ -1506,74 +1526,27 @@ local function drawPressurePlateAt(centerX, centerY, size, zoom, pressed, side, 
   love.graphics.line(centerX - w * 0.22, y + h * 0.5, centerX + w * 0.22, y + h * 0.5)
 end
 
-local function drawBoulderAt(x, y, size, cracked, zoom, side)
-  local pad = size * (side and 0.16 or 0.12)
-  local bx = x + pad
-  local by = y + pad
-  local bsize = size - pad * 2
-  if side then
-    -- Standing rock: taller than wide.
-    by = y + size * 0.08
-    bsize = size * 0.72
-    local bh = size * 0.88
-    if cracked then
-      love.graphics.setColor(0.36, 0.34, 0.32, 0.98)
-    else
-      love.graphics.setColor(0.42, 0.40, 0.38, 0.98)
-    end
-    love.graphics.rectangle("fill", bx, by + (size - bh) - pad, bsize, bh, 5, 5)
-    love.graphics.setColor(0.62, 0.60, 0.56, 0.9)
-    love.graphics.setLineWidth(1.5 / zoom)
-    love.graphics.rectangle("line", bx, by + (size - bh) - pad, bsize, bh, 5, 5)
-    love.graphics.setColor(0.28, 0.26, 0.24, 0.55)
-    local top = by + (size - bh) - pad
-    love.graphics.line(bx + bsize * 0.28, top + bh * 0.22, bx + bsize * 0.55, top + bh * 0.7)
-    love.graphics.line(bx + bsize * 0.6, top + bh * 0.3, bx + bsize * 0.78, top + bh * 0.62)
-    if cracked then
-      love.graphics.setColor(0.12, 0.10, 0.08, 0.95)
-      love.graphics.setLineWidth(2 / zoom)
-      love.graphics.line(
-        bx + bsize * 0.2, top + bh * 0.15,
-        bx + bsize * 0.45, top + bh * 0.48,
-        bx + bsize * 0.22, top + bh * 0.85
-      )
-      love.graphics.line(
-        bx + bsize * 0.45, top + bh * 0.48,
-        bx + bsize * 0.82, top + bh * 0.35
-      )
-    end
-    return
+local function getBoulderSprite(sprites, boulder)
+  if boulder.cracked then
+    return sprites.crackedBoulder
   end
+  return boulder.variant == 2 and sprites.boulder2 or sprites.boulder
+end
 
-  if cracked then
-    love.graphics.setColor(0.36, 0.34, 0.32, 0.98)
-  else
-    love.graphics.setColor(0.42, 0.40, 0.38, 0.98)
-  end
-  love.graphics.rectangle("fill", bx, by, bsize, bsize, 5, 5)
-  love.graphics.setColor(0.62, 0.60, 0.56, 0.9)
-  love.graphics.setLineWidth(1.5 / zoom)
-  love.graphics.rectangle("line", bx, by, bsize, bsize, 5, 5)
-  love.graphics.setColor(0.28, 0.26, 0.24, 0.55)
-  love.graphics.line(bx + bsize * 0.28, by + bsize * 0.22, bx + bsize * 0.55, by + bsize * 0.7)
-  love.graphics.line(bx + bsize * 0.6, by + bsize * 0.3, bx + bsize * 0.78, by + bsize * 0.62)
-  if cracked then
-    love.graphics.setColor(0.12, 0.10, 0.08, 0.95)
-    love.graphics.setLineWidth(2 / zoom)
-    love.graphics.line(
-      bx + bsize * 0.2, by + bsize * 0.15,
-      bx + bsize * 0.45, by + bsize * 0.48,
-      bx + bsize * 0.22, by + bsize * 0.85
-    )
-    love.graphics.line(
-      bx + bsize * 0.45, by + bsize * 0.48,
-      bx + bsize * 0.82, by + bsize * 0.35
-    )
-    love.graphics.line(
-      bx + bsize * 0.42, by + bsize * 0.55,
-      bx + bsize * 0.78, by + bsize * 0.8
-    )
-  end
+local function drawBoulderAt(image, centerX, anchorY, size, side)
+  local targetSize = size * 0.98
+  local scale = targetSize / math.max(image:getWidth(), image:getHeight())
+  love.graphics.setColor(1, 1, 1, 1)
+  love.graphics.draw(
+    image,
+    centerX,
+    anchorY,
+    0,
+    scale,
+    scale,
+    image:getWidth() / 2,
+    side and image:getHeight() or image:getHeight() / 2
+  )
 end
 
 function Grid:drawTopdown(zoom, camera, showGrid, filter)
@@ -1925,8 +1898,8 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
 
   for _, boulder in pairs(self.boulderTiles) do
     if isVisible(boulder) and include(boulder.col, boulder.row) then
-      local x, y = self:tileOrigin(boulder.col, boulder.row)
-      drawBoulderAt(x, y, self.size, boulder.cracked, zoom, false)
+      local centerX, centerY = self:tileCenter(boulder.col, boulder.row)
+      drawBoulderAt(getBoulderSprite(sprites, boulder), centerX, centerY, self.size, false)
     end
   end
 
@@ -2321,29 +2294,7 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
 
       local boulder = self.boulderTiles[key]
       if boulder then
-        local bh = size * 0.70
-        local bw = size * 0.52
-        local bx = centerX - bw * 0.5
-        local by = floorTop - bh
-        local depth = bw * 0.22
-        love.graphics.setColor(0.28, 0.26, 0.24, 1)
-        love.graphics.polygon("fill", bx + bw, by, bx + bw + depth, by - depth * 0.45, bx + bw + depth, floorTop - depth * 0.45, bx + bw, floorTop)
-        love.graphics.setColor(0.58, 0.56, 0.52, 1)
-        love.graphics.polygon("fill", bx, by, bx + bw, by, bx + bw + depth, by - depth * 0.45, bx + depth, by - depth * 0.45)
-        if boulder.cracked then
-          love.graphics.setColor(0.38, 0.36, 0.34, 1)
-        else
-          love.graphics.setColor(0.46, 0.44, 0.42, 1)
-        end
-        love.graphics.rectangle("fill", bx, by, bw, bh, 4, 4)
-        love.graphics.setColor(0.7, 0.68, 0.64, 0.9)
-        love.graphics.setLineWidth(1.25 / zoom)
-        love.graphics.rectangle("line", bx, by, bw, bh, 4, 4)
-        if boulder.cracked then
-          love.graphics.setColor(0.08, 0.06, 0.05, 0.95)
-          love.graphics.setLineWidth(2 / zoom)
-          love.graphics.line(bx + bw * 0.25, by + 8, bx + bw * 0.5, by + bh * 0.55, bx + bw * 0.28, by + bh - 6)
-        end
+        drawBoulderAt(getBoulderSprite(sprites, boulder), centerX, floorTop, size, true)
       end
 
       if self.fireTiles[key] then
