@@ -1694,7 +1694,6 @@ local function updatePlayScreen(dt, width, height)
   end
 
   if playOverlay ~= "pause" and not endingCutscene then
-  if playOverlay ~= "pause" then
     local beforeCol, beforeRow = player.col, player.row
     local wasNearFire = grid:isInFireZone(beforeCol, beforeRow)
     local wasSnowflake = grid:isSnowflakeTile(beforeCol, beforeRow)
