@@ -108,6 +108,9 @@ local function refreshCardMetrics(width, height)
 end
 
 local menuCharacter
+local menuTitleImage
+local menuTitleQuad
+local menuTitleWidth, menuTitleHeight = 2399, 1753
 local menuBg
 local menuBgW, menuBgH = 1, 1
 local bobAmount = 0
@@ -749,6 +752,16 @@ function love.load()
 
   menuCharacter = love.graphics.newImage("assets/background/icetncube.png")
   menuCharacter:setFilter("linear", "linear")
+
+  menuTitleImage = love.graphics.newImage("assets/sola.png")
+  menuTitleImage:setFilter("linear", "linear")
+  menuTitleQuad = love.graphics.newQuad(
+    41,
+    364,
+    menuTitleWidth,
+    menuTitleHeight,
+    menuTitleImage:getDimensions()
+  )
 
   love.graphics.setDepthMode("always", false)
 
@@ -1473,42 +1486,33 @@ end
 
 local function drawMenuTitle(width, height)
   local e = easeOutCubic(intro)
-  local title = "Ice Cube"
-  love.graphics.setFont(fonts.hero)
-
   local bw = menuPanelWidth(width)
   local x = menuAnchorX(width)
-  local tw = fonts.hero:getWidth(title)
-  local th = fonts.hero:getHeight()
-  local tx = math.floor(x + (bw - tw) * 0.5)
   local bob = math.sin(elapsed * 1.4) * 2.5
-  local ty = math.floor(menuBlockY(height) - th - 18 + bob + (1 - e) * 14)
   local a = e * titlePulse
+  local maxWidth = bw * 1.12
+  local maxHeight = math.min(180, height * 0.22)
+  local scale = math.min(
+    maxWidth / menuTitleWidth,
+    maxHeight / menuTitleHeight
+  )
+  local drawWidth = menuTitleWidth * scale
+  local drawHeight = menuTitleHeight * scale
+  local drawX = math.floor(x + (bw - drawWidth) * 0.5)
+  local drawY = math.floor(
+    menuBlockY(height) - drawHeight - 10 + bob + (1 - e) * 14
+  )
 
-  -- soft icy glow
-  setUiColor("accent", 0.28 * a)
-  love.graphics.print(title, tx - 1, ty)
-  love.graphics.print(title, tx + 1, ty)
-  love.graphics.print(title, tx, ty - 1)
-  love.graphics.print(title, tx, ty + 1)
-
-  -- shadow
-  setUiColor("shadow", 0.75 * a)
-  love.graphics.print(title, tx + 2, ty + 3)
-
-  -- fill
-  setUiColor("text", a)
-  love.graphics.print(title, tx, ty)
-
-  -- tiny sparkle
-  local sx = tx + tw + 6
-  local sy = ty + 8 + math.sin(elapsed * 3.2) * 2
-  local spark = (0.45 + 0.55 * math.sin(elapsed * 4.5)) * a
-  love.graphics.setColor(1, 1, 1, spark)
-  love.graphics.circle("fill", sx, sy, 2)
-  setUiColor("accentBright", spark * 0.8)
-  love.graphics.rectangle("fill", sx - 5, sy - 0.6, 10, 1.2)
-  love.graphics.rectangle("fill", sx - 0.6, sy - 5, 1.2, 10)
+  love.graphics.setColor(1, 1, 1, a)
+  love.graphics.draw(
+    menuTitleImage,
+    menuTitleQuad,
+    drawX,
+    drawY,
+    0,
+    scale,
+    scale
+  )
 end
 
 local function drawMenu(width, height)
