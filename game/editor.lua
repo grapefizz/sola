@@ -40,6 +40,7 @@ local TOOLS = {
   { name = "pressure_plate", label = "Pressure Plate", icon = "tile" },
   { name = "pressure_door", label = "Pressure Door", icon = "pressure_door" },
   { name = "puzzle_door", label = "Key Door", icon = "puzzle_door" },
+  { name = "final_door", label = "Final Door", icon = "final_door" },
   { name = "side_wall", label = "Side Wall", icon = "tile" },
   { name = "front_wall", label = "Front Wall", icon = "tile" },
   { name = "half_wall", label = "Half Wall", icon = "tile" },
@@ -278,6 +279,13 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     local scale = target / math.max(iw, ih)
     withAlpha(1, 1, 1, 1, alpha)
     love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
+  elseif tool == "final_door" then
+    local img = sprites.doorOpen
+    local iw, ih = img:getDimensions()
+    local target = size * 0.98
+    local scale = target / math.max(iw, ih)
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif tool == "side_wall" then
     drawSideWallPreview(sprites.brickEnd, x, y, size, size, size, alpha, wallFacing)
   elseif tool == "front_wall" or tool == "cracked_wall" then
@@ -376,6 +384,7 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:removePuzzlePiece(col, row)
     grid:removePuzzleCanvas(col, row)
     grid:removePuzzleDoor(col, row)
+    grid:removeFinalDoor(col, row)
     grid:removePressurePlate(col, row)
     grid:removeWall(col, row)
     grid:removeBoulder(col, row)
@@ -397,6 +406,8 @@ local function placeToolOnGrid(tool, col, row, grid, wallFacing, halfWallFill, w
     grid:addPressureDoor(col, row)
   elseif tool == "puzzle_door" then
     grid:addPuzzleDoor(col, row)
+  elseif tool == "final_door" then
+    grid:addFinalDoor(col, row)
   elseif tool == "side_wall" then
     grid:addWall(col, row, "side", wallFacing)
   elseif tool == "front_wall" then
@@ -495,6 +506,13 @@ local function drawActionIcon(kind, size)
   elseif kind == "puzzle_door" then
     local sprites = getPreviewSprites()
     local img = sprites.doorClosed
+    local iw, ih = img:getDimensions()
+    local scale = (w * 0.92) / math.max(iw, ih)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, x + w * 0.5, y + w * 0.5, 0, scale, scale, iw * 0.5, ih * 0.5)
+  elseif kind == "final_door" then
+    local sprites = getPreviewSprites()
+    local img = sprites.doorOpen
     local iw, ih = img:getDimensions()
     local scale = (w * 0.92) / math.max(iw, ih)
     love.graphics.setColor(1, 1, 1, 1)
@@ -1006,6 +1024,7 @@ function Editor:protectSpawn(grid)
   grid:removePuzzlePiece(self.spawnCol, self.spawnRow)
   grid:removePuzzleCanvas(self.spawnCol, self.spawnRow)
   grid:removePuzzleDoor(self.spawnCol, self.spawnRow)
+  grid:removeFinalDoor(self.spawnCol, self.spawnRow)
   grid:removePressurePlate(self.spawnCol, self.spawnRow)
   grid:removeWall(self.spawnCol, self.spawnRow)
   grid:removeBoulder(self.spawnCol, self.spawnRow)
@@ -1299,6 +1318,8 @@ function Editor:mousepressed(x, y, button, grid, camera)
           )
         elseif entry.name == "puzzle_door" then
           self:setStatus("Key door · walk into it while holding a full key")
+        elseif entry.name == "final_door" then
+          self:setStatus("Final door · walk into it to finish the level")
         elseif entry.name == "snowflake" then
           self:setStatus(snowflakeStatus(self.snowflakeSeconds))
         end
@@ -1474,6 +1495,10 @@ function Editor:keypressed(key, grid, camera)
     self.tool = "puzzle_door"
     self.loadDropdownOpen = false
     self:setStatus("Key door · walk into it while holding a full key")
+  elseif key == "f" then
+    self.tool = "final_door"
+    self.loadDropdownOpen = false
+    self:setStatus("Final door · walk into it to finish the level")
   elseif key == "t" then
     self.loadDropdownOpen = false
     self:openTimeEditor()
@@ -1883,6 +1908,8 @@ function Editor:draw(grid, camera)
         love.graphics.setColor(0.16, 0.48, 0.76, 0.95)
       elseif tool.name == "puzzle_door" then
          love.graphics.setColor(0.28, 0.30, 0.58, 0.95)
+      elseif tool.name == "final_door" then
+         love.graphics.setColor(0.42, 0.34, 0.62, 0.95)
       elseif tool.name == "side_wall" then
         love.graphics.setColor(0.32, 0.48, 0.62, 0.9)
       elseif tool.name == "front_wall" then
@@ -2142,7 +2169,7 @@ function Editor:draw(grid, camera)
   love.graphics.line(0, legendY, screenWidth, legendY)
   love.graphics.setColor(0.85, 0.93, 1)
   love.graphics.printf(
-    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Key Half  ·  U Pressure Door  ·  = Key Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  B Boulder 2  ·  - Cracked Boulder  ·  0 Erase",
+    "1 Ground  ·  2 Fire  ·  3 Ice  ·  4 Snowflake  ·  5 Tea  ·  K Plate  ·  J Key Half  ·  U Pressure Door  ·  = Key Door  ·  F Final Door  ·  6 Side  ·  7 Front  ·  H Half  ·  8 Cracked  ·  9 Boulder  ·  B Boulder 2  ·  - Cracked Boulder  ·  0 Erase",
     12,
     legendY + 7,
     screenWidth - 24,
@@ -2164,7 +2191,7 @@ function Editor:draw(grid, camera)
     "center"
   )
   love.graphics.printf(
-    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu  ·  U Pressure Door  ·  = Key Door",
+    "WASD/Arrows Pan  ·  Wheel Zoom  ·  V Perspective  ·  E Play/Edit  ·  Esc Menu  ·  U Pressure Door  ·  = Key Door  ·  F Final Door",
     12,
     legendY + 67,
     screenWidth - 24,

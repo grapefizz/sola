@@ -8,16 +8,6 @@ local FIRE_FRAME_SIZE = 128
 local FIRE_FRAME_COUNT = 9
 local FIRE_FRAME_DURATION = 1 / 12
 local DEFAULT_SNOWFLAKE_SECONDS = 3
-local PUDDLE_FRAME_SIZE = 256
--- One long connecting transition frame followed by the source GIF's 12
--- visible drag frames. Its 15 fully transparent trailing frames are omitted.
-local PUDDLE_FRAME_COUNT = 13
-local PUDDLE_FRAME_DURATION = 1 / 24
-local PUDDLE_ANIMATION_DURATION = PUDDLE_FRAME_COUNT * PUDDLE_FRAME_DURATION
--- The visible water is centered around y=216 in its 256px source frame.
--- Counter this transparent-canvas offset when the strip rotates vertically.
-local PUDDLE_CONTENT_Y_OFFSET = (216 - PUDDLE_FRAME_SIZE * 0.5)
-  / PUDDLE_FRAME_SIZE
 local tileSprites
 
 Grid.DEFAULT_SNOWFLAKE_SECONDS = DEFAULT_SNOWFLAKE_SECONDS
@@ -54,8 +44,6 @@ local function getTileSprites()
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
     wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
-    puddleLong = love.graphics.newImage("assets/puddlelong.png"),
-    puddleDrag = love.graphics.newImage("assets/puddledrag-sheet.png"),
   }
   tileSprites.ground:setFilter("linear", "linear")
   tileSprites.ice:setFilter("linear", "linear")
@@ -79,18 +67,6 @@ local function getTileSprites()
   tileSprites.wall:setFilter("linear", "linear")
   tileSprites.brickEnd:setFilter("linear", "linear")
   tileSprites.wallHalf2:setFilter("linear", "linear")
-  tileSprites.puddleLong:setFilter("linear", "linear")
-  tileSprites.puddleDrag:setFilter("linear", "linear")
-  tileSprites.puddleDragFrames = {}
-  for index = 1, PUDDLE_FRAME_COUNT do
-    tileSprites.puddleDragFrames[index] = love.graphics.newQuad(
-      (index - 1) * PUDDLE_FRAME_SIZE,
-      0,
-      PUDDLE_FRAME_SIZE,
-      PUDDLE_FRAME_SIZE,
-      tileSprites.puddleDrag:getDimensions()
-    )
-  end
   tileSprites.fireFrames = {}
   for index = 1, FIRE_FRAME_COUNT do
     tileSprites.fireFrames[index] = love.graphics.newQuad(
@@ -177,7 +153,6 @@ function Grid.new(size, columns, rows, fillGround)
     columns = columns,
     rows = rows,
     groundTiles = {},
-    puddleTiles = {},
     fireTiles = {},
     iceTiles = {},
     mossTiles = {},
@@ -185,6 +160,7 @@ function Grid.new(size, columns, rows, fillGround)
     teaTiles = {},
     puzzlePieceTiles = {}, -- key halves on the ground
     puzzleDoorTiles = {}, -- key doors (opened with a full key)
+    finalDoorTiles = {}, -- end-of-level door (walk in to finish)
     pressureDoorTiles = {},
     pressurePlateTiles = {},
     pressureDoorOpen = false,
@@ -269,6 +245,7 @@ function Grid:occupiedBounds(padding)
   consider(self.teaTiles)
   consider(self.puzzlePieceTiles)
   consider(self.puzzleDoorTiles)
+  consider(self.finalDoorTiles)
   consider(self.pressureDoorTiles)
   consider(self.pressurePlateTiles)
   consider(self.wallTiles)
@@ -346,6 +323,7 @@ function Grid:erase(col, row)
     { self.teaTiles, "tea" },
     { self.puzzlePieceTiles, "puzzle_piece" },
     { self.puzzleDoorTiles, "puzzle_door" },
+    { self.finalDoorTiles, "final_door" },
     { self.pressureDoorTiles, "pressure_door" },
     { self.pressurePlateTiles, "pressure_plate" },
   }
@@ -379,7 +357,6 @@ end
 
 function Grid:clear()
   self.groundTiles = {}
-  self.puddleTiles = {}
   self.fireTiles = {}
   self.iceTiles = {}
   self.mossTiles = {}
@@ -387,89 +364,13 @@ function Grid:clear()
   self.teaTiles = {}
   self.puzzlePieceTiles = {}
   self.puzzleDoorTiles = {}
+  self.finalDoorTiles = {}
   self.pressureDoorTiles = {}
   self.pressurePlateTiles = {}
   self.pressureDoorOpen = false
   self.wallTiles = {}
   self.boulderTiles = {}
   self.sideViewTiles = {}
-end
-
-function Grid:clearPuddles()
-  self.puddleTiles = {}
-end
-
-function Grid:addPuddleTrail(col, row, targetCol, targetRow)
-  -- Only the tile immediately behind the player owns the drag effect. A new
-  -- step replaces an unfinished animation instead of leaving several behind.
-  self.puddleTiles = {}
-  if self:isInside(col, row) then
-    self.puddleTiles[self:key(col, row)] = {
-      col = col,
-      row = row,
-      age = 0,
-      elapsed = 0,
-      dx = (targetCol or col) - col,
-      dy = (targetRow or row) - row,
-      targetCol = targetCol or col,
-      targetRow = targetRow or row,
-    }
-  end
-end
-
-function Grid:setPuddleTarget(col, row)
-  for _, puddle in pairs(self.puddleTiles) do
-    puddle.targetCol = col
-    puddle.targetRow = row
-  end
-end
-
-function Grid:updatePuddles(dt)
-  for key, puddle in pairs(self.puddleTiles) do
-    puddle.age = (puddle.age or 0) + dt
-    puddle.elapsed = ((puddle.elapsed or 0) + dt)
-      % PUDDLE_ANIMATION_DURATION
-    if puddle.age >= PUDDLE_ANIMATION_DURATION then
-      self.puddleTiles[key] = nil
-    end
-  end
-end
-
-local function puddleFrame(sprites, puddle)
-  local elapsed = math.max(0, puddle.elapsed or 0)
-  local index = math.min(
-    PUDDLE_FRAME_COUNT,
-    math.floor(elapsed / PUDDLE_FRAME_DURATION) + 1
-  )
-  return sprites.puddleDragFrames[index]
-end
-
-local function puddleTransform(puddle)
-  -- Keep the artwork upright for horizontal movement. Mirroring instead of
-  -- rotating 180 degrees keeps its wet edge aligned with the player's puddle.
-  if (puddle.dx or 0) > 0 then return 0, -1 end
-  if (puddle.dx or 0) < 0 then return 0, 1 end
-  if (puddle.dy or 0) > 0 then return -math.pi * 0.5, 1 end
-  if (puddle.dy or 0) < 0 then return math.pi * 0.5, 1 end
-  return 0, 1
-end
-
-local function puddleDirection(puddle)
-  local dx = puddle.dx or 0
-  local dy = puddle.dy or 0
-  return dx == 0 and 0 or (dx > 0 and 1 or -1),
-    dy == 0 and 0 or (dy > 0 and 1 or -1)
-end
-
-local function eachPuddleBridgeTile(puddle, callback)
-  local dx = (puddle.targetCol or puddle.col) - puddle.col
-  local dy = (puddle.targetRow or puddle.row) - puddle.row
-  local stepX = dx == 0 and 0 or (dx > 0 and 1 or -1)
-  local stepY = dy == 0 and 0 or (dy > 0 and 1 or -1)
-  local distance = math.max(math.abs(dx), math.abs(dy))
-  for step = 1, distance - 1 do
-    callback(puddle.col + stepX * step, puddle.row + stepY * step)
-  end
 end
 
 function Grid:addSideView(col, row)
@@ -510,6 +411,7 @@ function Grid:addFire(col, row)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
@@ -540,6 +442,7 @@ function Grid:addIce(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   -- Keep transparent side / half wall overlays sitting on this ice.
   local wall = self.wallTiles[key]
@@ -569,6 +472,7 @@ function Grid:addMoss(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   local wall = self.wallTiles[key]
   if wall and not (wall.texture == "side" or wall.half) then
@@ -613,6 +517,7 @@ function Grid:addSnowflake(col, row, seconds)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   local wall = self.wallTiles[key]
@@ -664,6 +569,7 @@ function Grid:addTea(col, row)
   self.snowflakeTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
@@ -696,6 +602,7 @@ function Grid:addPuzzlePiece(col, row, variant)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   self.wallTiles[key] = nil
@@ -761,6 +668,7 @@ function Grid:addPuzzleDoor(col, row)
   self.snowflakeTiles[key] = nil
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -794,6 +702,35 @@ function Grid:openPuzzleDoors()
   end
 end
 
+-- Final door (serialized as y). Walkable; entering finishes the level.
+function Grid:addFinalDoor(col, row)
+  if not self:isInside(col, row) then
+    return
+  end
+  self:setGround(col, row)
+  local key = self:key(col, row)
+  self.fireTiles[key] = nil
+  self.iceTiles[key] = nil
+  self.mossTiles[key] = nil
+  self.snowflakeTiles[key] = nil
+  self.teaTiles[key] = nil
+  self.puzzlePieceTiles[key] = nil
+  self.puzzleDoorTiles[key] = nil
+  self.pressureDoorTiles[key] = nil
+  self.pressurePlateTiles[key] = nil
+  self.wallTiles[key] = nil
+  self.boulderTiles[key] = nil
+  self.finalDoorTiles[key] = { col = col, row = row }
+end
+
+function Grid:removeFinalDoor(col, row)
+  self.finalDoorTiles[self:key(col, row)] = nil
+end
+
+function Grid:isFinalDoor(col, row)
+  return self.finalDoorTiles[self:key(col, row)] ~= nil
+end
+
 function Grid:addPressureDoor(col, row)
   if not self:isInside(col, row) then
     return
@@ -805,6 +742,7 @@ function Grid:addPressureDoor(col, row)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -831,6 +769,7 @@ function Grid:addPressurePlate(col, row)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.wallTiles[key] = nil
   self.boulderTiles[key] = nil
@@ -885,6 +824,7 @@ function Grid:addWall(col, row, texture, lean, options)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
 
@@ -1075,6 +1015,7 @@ function Grid:addBoulder(col, row, options)
   self.teaTiles[key] = nil
   self.puzzlePieceTiles[key] = nil
   self.puzzleDoorTiles[key] = nil
+  self.finalDoorTiles[key] = nil
   self.pressureDoorTiles[key] = nil
   self.pressurePlateTiles[key] = nil
   local wall = self.wallTiles[key]
@@ -1256,6 +1197,8 @@ function Grid:serialize()
         cells[col] = "F"
       elseif self:isTeaTile(col, row) then
         cells[col] = "T"
+      elseif self:isFinalDoor(col, row) then
+        cells[col] = "y"
       elseif self:isPuzzleDoor(col, row) then
         cells[col] = "L"
       elseif self:isPressureDoor(col, row) then
@@ -1429,6 +1372,7 @@ function Grid:serialize()
   recordEmpty(self.teaTiles)
   recordEmpty(self.puzzlePieceTiles)
   recordEmpty(self.puzzleDoorTiles)
+  recordEmpty(self.finalDoorTiles)
   recordEmpty(self.pressureDoorTiles)
   recordEmpty(self.pressurePlateTiles)
   recordEmpty(self.wallTiles)
@@ -1517,6 +1461,8 @@ function Grid:load(serialized)
         self:addSnowflake(col, row)
       elseif cell == "T" then
         self:addTea(col, row)
+      elseif cell == "y" then
+        self:addFinalDoor(col, row)
       elseif cell == "J" then
         self:addPuzzlePiece(col, row, "top")
       elseif cell == "M" then
@@ -2168,45 +2114,6 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     end
   end
 
-  for _, puddle in pairs(self.puddleTiles) do
-    if isVisible(puddle) and include(puddle.col, puddle.row) then
-      local x, y = self:tileOrigin(puddle.col, puddle.row)
-      local angle, directionScale = puddleTransform(puddle)
-      local directionX, directionY = puddleDirection(puddle)
-      local overlap = self.size * 0.06
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.draw(
-        sprites.puddleDrag,
-        puddleFrame(sprites, puddle),
-        x + self.size * 0.5
-          + directionX * overlap
-          - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
-        y + self.size * 0.5 + directionY * overlap,
-        angle,
-        directionScale * self.size * 1.12 / PUDDLE_FRAME_SIZE,
-        self.size / PUDDLE_FRAME_SIZE,
-        PUDDLE_FRAME_SIZE * 0.5,
-        PUDDLE_FRAME_SIZE * 0.5
-      )
-      eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
-        if include(bridgeCol, bridgeRow) then
-          local bridgeX, bridgeY = self:tileOrigin(bridgeCol, bridgeRow)
-          love.graphics.draw(
-            sprites.puddleLong,
-            bridgeX + self.size * 0.5
-              - directionY * self.size * PUDDLE_CONTENT_Y_OFFSET,
-            bridgeY + self.size * 0.5,
-            angle,
-            directionScale * self.size * 1.12 / sprites.puddleLong:getWidth(),
-            self.size / sprites.puddleLong:getHeight(),
-            sprites.puddleLong:getWidth() * 0.5,
-            sprites.puddleLong:getHeight() * 0.5
-          )
-        end
-      end)
-    end
-  end
-
   -- Behind full walls get an inset ground pad; all walls retain their ground tile.
   local behindPad = math.max(8, math.floor(self.size * 0.18))
   for col = minCol, maxCol do
@@ -2309,6 +2216,13 @@ function Grid:drawTopdown(zoom, camera, showGrid, filter)
     if isVisible(door) and include(door.col, door.row) then
       local x, y = self:tileOrigin(door.col, door.row)
       drawPuzzleDoorAt(x, y, self.size, zoom, false, door.open)
+    end
+  end
+
+  for _, door in pairs(self.finalDoorTiles) do
+    if isVisible(door) and include(door.col, door.row) then
+      local x, y = self:tileOrigin(door.col, door.row)
+      drawPuzzleDoorAt(x, y, self.size, zoom, false, true)
     end
   end
 
@@ -2740,48 +2654,6 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
       end
     end
 
-    for col = minCol, maxCol do
-      if self.puddleTiles[self:key(col, row)] and include(col, row) then
-        local puddle = self.puddleTiles[self:key(col, row)]
-        local x = (col - 1) * size
-        local floorTop = cellFloorTop(col, row)
-        local angle, directionScale = puddleTransform(puddle)
-        local directionX, directionY = puddleDirection(puddle)
-        local overlap = size * 0.06
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.draw(
-          sprites.puddleDrag,
-          puddleFrame(sprites, puddle),
-          x + size * 0.5
-            + directionX * overlap
-            - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
-          floorTop - size * 0.5 + directionY * overlap,
-          angle,
-          directionScale * size * 1.12 / PUDDLE_FRAME_SIZE,
-          size / PUDDLE_FRAME_SIZE,
-          PUDDLE_FRAME_SIZE * 0.5,
-          PUDDLE_FRAME_SIZE * 0.5
-        )
-        eachPuddleBridgeTile(puddle, function(bridgeCol, bridgeRow)
-          if include(bridgeCol, bridgeRow) then
-            local bridgeX = (bridgeCol - 1) * size
-            local bridgeFloorTop = cellFloorTop(bridgeCol, bridgeRow)
-            love.graphics.draw(
-              sprites.puddleLong,
-              bridgeX + size * 0.5
-                - directionY * size * PUDDLE_CONTENT_Y_OFFSET,
-              bridgeFloorTop - size * 0.5,
-              angle,
-              directionScale * size * 1.12 / sprites.puddleLong:getWidth(),
-              size / sprites.puddleLong:getHeight(),
-              sprites.puddleLong:getWidth() * 0.5,
-              sprites.puddleLong:getHeight() * 0.5
-            )
-          end
-        end)
-      end
-    end
-
     -- 3) Front-layer front / half / cracked walls
     for col = minCol, maxCol do
       local wall = self.wallTiles[self:key(col, row)]
@@ -2852,6 +2724,12 @@ function Grid:drawSide(zoom, camera, showGrid, filter)
          local x = (col - 1) * size
          local y = floorTop - size
          drawPuzzleDoorAt(x, y, size, zoom, true, self.puzzleDoorTiles[key].open)
+       end
+
+       if self.finalDoorTiles[key] then
+         local x = (col - 1) * size
+         local y = floorTop - size
+         drawPuzzleDoorAt(x, y, size, zoom, true, true)
        end
 
       local boulder = self.boulderTiles[key]

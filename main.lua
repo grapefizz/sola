@@ -9,13 +9,27 @@ local Grid = require "game.grid"
 local Player = require "game.player"
 local Perspective = require "game.perspective"
 
-local state = "menu" -- menu | levels | credits | settings | play
+local state = "menu" -- menu | levels | credits | settings | play | campaign_complete
 local elapsed = 0
 local hover = 0
 local selected = 1
 local snow = {}
 local fonts = {}
 local mouseX, mouseY = 0, 0
+-- Standalone end screen after the Final Door cutscene (not the play overlay).
+local campaignComplete = {
+  selected = 1,
+  hover = 0,
+  intro = 0,
+  inputLock = 0,
+  keyboardConfirm = false,
+  slide = { 0, 0, 0 },
+}
+local campaignCompleteMenu = {
+  { id = "play_again", label = "Play Again" },
+  { id = "main_menu", label = "Main Menu" },
+  { id = "levels", label = "Levels" },
+}
 
 -- UI palette sampled from the cave background, with the character's blue as
 -- the interactive accent.
@@ -52,6 +66,12 @@ local overlaySelected = 1
 local overlayHover = 0
 local overlayIntro = 0
 local overlaySlide = {0, 0, 0}
+-- Fullscreen iced-tea ending played after walking into a Final Door.
+local endingCutscene = nil -- nil | { video = Video, elapsed = number, duration = number }
+local overlayInputLock = 0 -- ignore overlay input briefly after cutscene ends
+-- After the ending cutscene, Space/Enter must not auto-confirm until the
+-- player moves the selection or clicks (avoids skip → Main Menu).
+local overlayKeyboardConfirm = true
 local progress = { finished = {} }
 local deadMenu = {
   { id = "retry", label = "Retry" },
@@ -270,6 +290,7 @@ local function buildLevelPreview(name)
   snap:removePuzzlePiece(SPAWN_COL, SPAWN_ROW)
   snap:removePuzzleCanvas(SPAWN_COL, SPAWN_ROW)
   snap:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
+  snap:removeFinalDoor(SPAWN_COL, SPAWN_ROW)
   snap:removePressureDoor(SPAWN_COL, SPAWN_ROW)
   snap:removeWall(SPAWN_COL, SPAWN_ROW)
 
@@ -370,6 +391,11 @@ local function openLevelSelect()
   playOverlay = nil
   overlayReason = nil
   overlayIntro = 0
+  overlayInputLock = 0
+  if endingCutscene then
+    if endingCutscene.video then endingCutscene.video:release() end
+    endingCutscene = nil
+  end
   intro = 0
   levelIntro = 0
   levelScroll = 0
@@ -382,6 +408,11 @@ local function openMainMenu()
   playOverlay = nil
   overlayReason = nil
   overlayIntro = 0
+  overlayInputLock = 0
+  if endingCutscene then
+    if endingCutscene.video then endingCutscene.video:release() end
+    endingCutscene = nil
+  end
   intro = 0
   love.window.setTitle("Ice Cube")
 end
@@ -436,6 +467,7 @@ local function openPlayOverlay(kind, reason)
   overlaySelected = 1
   overlayHover = 0
   overlayIntro = 0
+  overlayKeyboardConfirm = true
   local items = overlayItems()
   for i = 1, #items do
     overlaySlide[i] = 0
@@ -451,7 +483,6 @@ local function closePlayOverlay()
 end
 
 local function restartRun()
-  grid:clearPuddles()
   if currentLevelName and editor then
     editor:loadLevel(grid, currentLevelName)
   else
@@ -463,6 +494,7 @@ local function restartRun()
     grid:removePuzzlePiece(SPAWN_COL, SPAWN_ROW)
     grid:removePuzzleCanvas(SPAWN_COL, SPAWN_ROW)
     grid:removePuzzleDoor(SPAWN_COL, SPAWN_ROW)
+    grid:removeFinalDoor(SPAWN_COL, SPAWN_ROW)
     grid:removeWall(SPAWN_COL, SPAWN_ROW)
   end
   local timeLimit = editor and editor:getLevelTime() or 40
@@ -471,6 +503,11 @@ local function restartRun()
   camera = Camera.new(cameraX, cameraY, GAMEPLAY_MIN_ZOOM)
   cameraFollowX, cameraFollowY = cameraX, cameraY
   cameraPerspective = playerPerspectiveMode()
+  if endingCutscene then
+    if endingCutscene.video then endingCutscene.video:release() end
+    endingCutscene = nil
+  end
+  overlayInputLock = 0
   playOverlay = nil
   overlayReason = nil
   overlayIntro = 0
@@ -587,6 +624,90 @@ local function bumpShake(mag, time)
   if not getSetting("screenshake") then return end
   shakeMag = math.max(shakeMag, mag)
   shakeTime = math.max(shakeTime, time)
+end
+
+local function openCampaignComplete()
+  -- Dedicated top-level state so play-overlay Esc / hover / skip-key
+  -- chaining cannot dump the player onto the main menu landing page.
+  state = "campaign_complete"
+  playOverlay = nil
+  overlayReason = nil
+  endingCutscene = nil
+  campaignComplete.selected = 1
+  campaignComplete.hover = 0
+  campaignComplete.intro = 0
+  campaignComplete.inputLock = 1.25
+  campaignComplete.keyboardConfirm = false
+  for i = 1, #campaignCompleteMenu do
+    campaignComplete.slide[i] = 0
+  end
+  love.window.setTitle("Ice Cube — Campaign Complete")
+end
+
+local function finishEndingCutscene()
+  local video = endingCutscene and endingCutscene.video
+  endingCutscene = nil
+  if video then
+    pcall(function()
+      video:pause()
+      video:release()
+    end)
+  end
+  openCampaignComplete()
+  pcall(function()
+    playSfx(sfxToggle)
+  end)
+  pcall(function()
+    bumpShake(4, 0.2)
+  end)
+end
+
+local function startEndingCutscene()
+  if endingCutscene or playOverlay then
+    return
+  end
+  local ok, video = pcall(love.graphics.newVideo, "assets/icetea-2.ogv")
+  if not ok or not video then
+    finishEndingCutscene()
+    return
+  end
+  local duration = 11.4
+  pcall(function()
+    -- Prefer stream length when the backend exposes it.
+    if video.getSource and video:getSource() and video:getSource().getDuration then
+      local d = video:getSource():getDuration()
+      if type(d) == "number" and d > 0 then
+        duration = d
+      end
+    end
+  end)
+  endingCutscene = {
+    video = video,
+    elapsed = 0,
+    duration = duration,
+  }
+  video:play()
+end
+
+local function drawEndingCutscene(width, height)
+  if not endingCutscene or not endingCutscene.video then
+    return
+  end
+  local video = endingCutscene.video
+  love.graphics.setColor(0, 0, 0, 1)
+  love.graphics.rectangle("fill", 0, 0, width, height)
+  local vw, vh = video:getWidth(), video:getHeight()
+  if vw > 0 and vh > 0 then
+    local scale = math.min(width / vw, height / vh)
+    local x = (width - vw * scale) * 0.5
+    local y = (height - vh * scale) * 0.5
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(video, x, y, 0, scale, scale)
+  end
+  love.graphics.setFont(fonts.small)
+  setUiColor("textMuted", 0.85)
+  local tip = "Click / Space to skip"
+  love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 36)
 end
 
 local function makeTone(freq, dur, vol, slide)
@@ -756,6 +877,44 @@ function love.load()
   makeSnow(w, h)
   intro = 0
   loadProgress()
+end
+
+function love.errorhandler(msg)
+  pcall(function()
+    love.filesystem.write(
+      "last_error.txt",
+      tostring(msg) .. "\n\n" .. tostring(debug.traceback("", 2))
+    )
+  end)
+  print("ERROR:", msg)
+
+  msg = tostring(msg)
+  local trace = debug.traceback("", 2) or ""
+
+  return function()
+    love.event.pump()
+    for name, a in love.event.poll() do
+      if name == "quit" then
+        return 1
+      elseif name == "keypressed" and a == "escape" then
+        return 1
+      end
+    end
+
+    if love.graphics and love.graphics.isActive() then
+      love.graphics.origin()
+      love.graphics.clear(0.08, 0.02, 0.05)
+      love.graphics.setColor(1, 0.85, 0.9)
+      local font = love.graphics.getFont()
+      love.graphics.print("Error (Esc to quit) — also saved to last_error.txt", 20, 20)
+      love.graphics.printf(msg .. "\n\n" .. trace, 20, 50, love.graphics.getWidth() - 40)
+      love.graphics.present()
+    end
+
+    if love.timer then
+      love.timer.sleep(0.05)
+    end
+  end
 end
 
 function love.resize(w, h)
@@ -954,6 +1113,141 @@ local function activateOverlay(item)
   end
 end
 
+local function campaignCompletePanelRect(width, height)
+  local items = campaignCompleteMenu
+  local pw = 260
+  local rowH = 40
+  local titleH = 56
+  local pad = 16
+  local ph = titleH + pad + #items * rowH + 12
+  local px = math.floor((width - pw) * 0.5)
+  local py = math.floor((height - ph) * 0.5)
+  return px, py, pw, ph, rowH, titleH, pad
+end
+
+local function campaignCompleteItemHit(mx, my, width, height)
+  local items = campaignCompleteMenu
+  local px, py, pw, _, rowH, titleH, pad = campaignCompletePanelRect(width, height)
+  local y0 = py + titleH + pad - 4
+  for i = 1, #items do
+    local y = y0 + (i - 1) * rowH
+    if mx >= px + 12 and mx <= px + pw - 12 and my >= y and my <= y + rowH - 6 then
+      return i
+    end
+  end
+  return 0
+end
+
+local function activateCampaignComplete(item)
+  if not item then
+    return
+  end
+  playSfx(sfxClick)
+  bumpShake(3.5, 0.16)
+  local id = item.id
+  if id == "play_again" then
+    state = "play"
+    restartRun()
+    love.window.setTitle(
+      currentLevelName and ("Ice Cube — " .. prettyLevelName(currentLevelName)) or "Ice Cube — Play"
+    )
+  elseif id == "main_menu" then
+    openMainMenu()
+  elseif id == "levels" then
+    openLevelSelect()
+  end
+end
+
+local function updateCampaignCompleteScreen(dt, width, height)
+  if campaignComplete.inputLock > 0 then
+    campaignComplete.inputLock = math.max(0, campaignComplete.inputLock - dt)
+  end
+  campaignComplete.intro = math.min(1, campaignComplete.intro + dt)
+  if campaignComplete.inputLock <= 0 then
+    local hit = campaignCompleteItemHit(mouseX, mouseY, width, height)
+    if hit > 0 then
+      campaignComplete.selected = hit
+      campaignComplete.hover = hit
+    else
+      campaignComplete.hover = 0
+    end
+  else
+    campaignComplete.hover = 0
+  end
+  for i = 1, #campaignCompleteMenu do
+    local target = ((i == campaignComplete.selected) or (i == campaignComplete.hover)) and 1 or 0
+    campaignComplete.slide[i] = lerp(campaignComplete.slide[i] or 0, target, 1 - math.exp(-16 * dt))
+  end
+end
+
+local function drawCampaignCompleteScreen(width, height)
+  local e = easeOutCubic(clamp(campaignComplete.intro / 0.35, 0, 1))
+  local items = campaignCompleteMenu
+  local px, py, pw, ph, rowH, titleH, pad = campaignCompletePanelRect(width, height)
+  py = py + math.floor((1 - e) * 10)
+
+  -- Keep the finished level visible behind the panel (same vibe as play overlay).
+  -- Do not call drawPlayBackground/drawAtmosphere here: those locals are
+  -- declared later in this file, so a call would hit nil globals and crash
+  -- Love straight back to the main menu.
+  love.graphics.setBackgroundColor(0.04, 0.08, 0.16)
+  love.graphics.clear(0.04, 0.08, 0.16)
+  if grid and camera and player then
+    camera:attach()
+    grid:draw(camera.zoom, camera, false)
+    camera:detach()
+    player:draw(grid, camera)
+  end
+
+  setUiColor("shadow", 0.58 * e)
+  love.graphics.rectangle("fill", 0, 0, width, height)
+
+  drawPanel(px, py, pw, ph, e)
+
+  local title = "Campaign Complete!"
+  love.graphics.setFont(fonts.menu)
+  local tx = math.floor(px + (pw - fonts.menu:getWidth(title)) * 0.5)
+  setUiColor("shadow", e)
+  love.graphics.print(title, tx + 1, py + 14)
+  setUiColor("text", e)
+  love.graphics.print(title, tx, py + 13)
+
+  setUiColor("panelHighlight", 0.65 * e)
+  love.graphics.rectangle("fill", px + 24, py + 46, pw - 48, 2)
+
+  local y0 = py + titleH + pad - 4
+  for i, item in ipairs(items) do
+    local y = y0 + (i - 1) * rowH
+    local slide = campaignComplete.slide[i] or 0
+    local active = slide > 0.15
+    local pulse = active and (0.85 + 0.15 * math.sin(elapsed * 5)) or 1
+    local inset = math.floor(10 - 4 * slide)
+    local rowX = px + inset
+    local rowW = pw - inset * 2
+    local rowHDraw = rowH - 8
+
+    if active then
+      drawRowHighlight(rowX, y, rowW, rowHDraw, e * pulse)
+      local cx = rowX + 14
+      local cy = y + math.floor(rowHDraw * 0.5)
+      setUiColor("selectionBright", 0.72 * e)
+      love.graphics.polygon("fill", cx - 2, cy - 8, cx + 11, cy, cx - 2, cy + 8)
+      love.graphics.setColor(1, 1, 1, e)
+      love.graphics.polygon("fill", cx, cy - 6, cx + 9, cy, cx, cy + 6)
+    end
+
+    love.graphics.setFont(fonts.credits)
+    local labelA = (0.7 + 0.3 * slide) * e
+    local th = fonts.credits:getHeight()
+    local lx = px + 36
+    local ly = y + math.floor((rowHDraw - th) * 0.5)
+    setUiColor("shadow", labelA)
+    love.graphics.print(item.label, lx + 1, ly + 1)
+    setUiColor("text", labelA)
+    love.graphics.print(item.label, lx, ly)
+  end
+end
+
 local function drawPlayOverlay(width, height)
   if not playOverlay then
     return
@@ -971,7 +1265,7 @@ local function drawPlayOverlay(width, height)
 
   local title = "Game Over"
   if playOverlay == "complete" then
-    title = "Level Complete!"
+    title = nextLevelInfo() and "Level Complete!" or "Campaign Complete!"
   elseif playOverlay == "pause" then
     title = "Paused"
   end
@@ -1052,62 +1346,6 @@ local function levelsGridMetrics(width, height)
   return gridX, gridY, gridW, gridH
 end
 
-local function perspectiveButtonRect(width, height)
-  local bw, bh = 148, 34
-  local x = width - bw - 18
-  local y = 18
-  return x, y, bw, bh
-end
-
-local function perspectiveButtonHit(mx, my, width, height)
-  local x, y, w, h = perspectiveButtonRect(width, height)
-  if mx >= x and mx <= x + w and my >= y and my <= y + h then
-    return true
-  end
-  return false
-end
-
-local function togglePerspectiveView()
-  Perspective.toggle()
-  clearLevelPreviews()
-  playSfx(sfxToggle)
-  bumpShake(2.5, 0.12)
-end
-
-local function drawPerspectiveButton(width, height, alpha)
-  alpha = alpha or 1
-  local x, y, w, h = perspectiveButtonRect(width, height)
-  local hover = perspectiveButtonHit(mouseX, mouseY, width, height)
-  local side = Perspective.isSide()
-
-  setUiColor("panelOuter", 0.92 * alpha)
-  love.graphics.rectangle("fill", x, y, w, h, 6, 6)
-  if hover or side then
-    setUiColor("selectionBright", (hover and 0.95 or 0.72) * alpha)
-  else
-    setUiColor("panelHighlight", 0.75 * alpha)
-  end
-  love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", x + 1, y + 1, w - 2, h - 2, 5, 5)
-
-  -- Tiny glyph: plan square vs standing block.
-  local gx = x + 12
-  local gy = y + 8
-  if side then
-    love.graphics.setColor(0.78, 0.58, 0.42, alpha)
-    love.graphics.rectangle("fill", gx + 4, gy, 10, 18, 1, 1)
-    love.graphics.setColor(0.92, 0.78, 0.58, alpha)
-    love.graphics.rectangle("fill", gx + 4, gy, 10, 3, 1, 1)
-  else
-    setUiColor("accent", alpha)
-    love.graphics.rectangle("fill", gx, gy + 4, 16, 12, 2, 2)
-  end
-
-  love.graphics.setFont(fonts.small)
-  local label = Perspective.shortLabel() .. " View"
-  setUiColor("text", alpha)
-  love.graphics.print(label, x + 34, y + math.floor((h - fonts.small:getHeight()) * 0.5))
-end
 local function levelCardRect(index, width, height)
   local localIndex = index - levelScroll * CARD_COLS
   if localIndex < 1 or localIndex > CARD_COLS * CARD_ROWS then
@@ -1252,7 +1490,7 @@ local function updatePlayScreen(dt, width, height)
     return
   end
 
-  if playOverlay ~= "pause" then
+  if playOverlay ~= "pause" and not endingCutscene then
     player:update(dt, grid)
     local drawCol, drawRow = player:getDrawState()
     local cameraX, cameraY = grid:tileCenter(drawCol, drawRow)
@@ -1270,15 +1508,19 @@ local function updatePlayScreen(dt, width, height)
     camera.y = cameraFollowY
   end
 
-  if not playOverlay then
-    -- Reaching the iced-tea goal is the only completion condition.
+  if not playOverlay and not endingCutscene then
+    -- Tea goal completes immediately; Final Door plays the iced-tea cutscene first.
     if player.won then
       if currentLevelName and not progress.finished[currentLevelName] then
         markLevelFinished(currentLevelName)
       end
-      openPlayOverlay("complete")
-      playSfx(sfxToggle)
-      bumpShake(4, 0.2)
+      if player.wonViaFinalDoor then
+        startEndingCutscene()
+      else
+        openPlayOverlay("complete")
+        playSfx(sfxToggle)
+        bumpShake(4, 0.2)
+      end
     elseif player.dead then
       openPlayOverlay("dead", "burned")
       playSfx(sfxClick)
@@ -1290,13 +1532,39 @@ local function updatePlayScreen(dt, width, height)
     end
   end
 
-  if playOverlay then
+  if endingCutscene then
+    endingCutscene.elapsed = (endingCutscene.elapsed or 0) + dt
+    local video = endingCutscene.video
+    local tell = 0
+    local playing = true
+    pcall(function() tell = video:tell() or 0 end)
+    pcall(function() playing = video:isPlaying() end)
+    local duration = endingCutscene.duration or 11.4
+    local finished = endingCutscene.elapsed >= 0.75
+      and (
+        (not playing and tell > 0.2)
+        or tell >= duration - 0.08
+        or endingCutscene.elapsed >= duration + 0.35
+      )
+    if finished then
+      finishEndingCutscene()
+    end
+  elseif playOverlay then
+    if overlayInputLock > 0 then
+      overlayInputLock = math.max(0, overlayInputLock - dt)
+    end
     overlayIntro = math.min(1, overlayIntro + dt)
     local items = overlayItems()
-    local hit = overlayItemHit(mouseX, mouseY, width, height)
-    if hit > 0 then
-      overlaySelected = hit
-      overlayHover = hit
+    -- While locked, keep the default selection (Play Again / Next Level).
+    -- Hover must not silently arm Main Menu under the cursor.
+    if overlayInputLock <= 0 then
+      local hit = overlayItemHit(mouseX, mouseY, width, height)
+      if hit > 0 then
+        overlaySelected = hit
+        overlayHover = hit
+      else
+        overlayHover = 0
+      end
     else
       overlayHover = 0
     end
@@ -1318,7 +1586,7 @@ function love.update(dt)
   updateShake(dt)
   updateSnowFlakes(dt, width, height)
 
-  if state == "menu" or state == "credits" or state == "settings" or state == "levels" then
+  if state == "menu" or state == "credits" or state == "settings" or state == "levels" or state == "campaign_complete" then
     intro = math.min(1, intro + dt * 1.35)
   end
 
@@ -1328,6 +1596,8 @@ function love.update(dt)
     updateMenuScreen(dt, width, height)
   elseif state == "play" then
     updatePlayScreen(dt, width, height)
+  elseif state == "campaign_complete" then
+    updateCampaignCompleteScreen(dt, width, height)
   end
 end
 
@@ -1654,10 +1924,8 @@ local function drawLevels(width, height)
 
   love.graphics.setFont(fonts.small)
   setUiColor("textMuted", 0.9 * e)
-  local tip = "Arrows to move  ·  Enter to play  ·  V perspective  ·  Esc back"
+  local tip = "Arrows to move  ·  Enter to play  ·  Esc back"
   love.graphics.print(tip, math.floor((width - fonts.small:getWidth(tip)) * 0.5), height - 34)
-
-  drawPerspectiveButton(width, height, e)
 end
 
 local function drawCredits(width, height)
@@ -1851,8 +2119,17 @@ function love.draw()
     else
       player:draw(grid, camera)
       player:drawHud(grid)
-      drawPlayOverlay(width, height)
+      if endingCutscene then
+        drawEndingCutscene(width, height)
+      else
+        drawPlayOverlay(width, height)
+      end
     end
+    return
+  end
+
+  if state == "campaign_complete" then
+    drawCampaignCompleteScreen(width, height)
     return
   end
 
@@ -1873,6 +2150,33 @@ function love.draw()
 end
 
 function love.keypressed(key)
+  if state == "campaign_complete" then
+    if campaignComplete.inputLock > 0 then
+      return
+    end
+    local items = campaignCompleteMenu
+    if key == "up" or key == "w" then
+      campaignComplete.keyboardConfirm = true
+      campaignComplete.selected = campaignComplete.selected - 1
+      if campaignComplete.selected < 1 then campaignComplete.selected = #items end
+      playSfx(sfxClick)
+    elseif key == "down" or key == "s" then
+      campaignComplete.keyboardConfirm = true
+      campaignComplete.selected = campaignComplete.selected + 1
+      if campaignComplete.selected > #items then campaignComplete.selected = 1 end
+      playSfx(sfxClick)
+    elseif key == "return" or key == "space" then
+      if not campaignComplete.keyboardConfirm then
+        return
+      end
+      activateCampaignComplete(items[campaignComplete.selected])
+    elseif key == "escape" then
+      -- Stay on this screen; Esc used to bounce to Levels / Main Menu.
+      return
+    end
+    return
+  end
+
   if state == "menu" then
     if key == "up" or key == "w" then
       selected = selected - 1
@@ -1976,17 +2280,34 @@ function love.keypressed(key)
       return
     end
 
+    if endingCutscene and not editor.active then
+      -- Esc is intentionally not a skip key: it used to chain into
+      -- Level Select / Main Menu after the complete overlay appeared.
+      if overlayInputLock <= 0 and (key == "space" or key == "return") then
+        finishEndingCutscene()
+      end
+      return
+    end
+
     if playOverlay and not editor.active then
+      if overlayInputLock > 0 then
+        return
+      end
       local items = overlayItems()
       if key == "up" or key == "w" then
+        overlayKeyboardConfirm = true
         overlaySelected = overlaySelected - 1
         if overlaySelected < 1 then overlaySelected = #items end
         playSfx(sfxClick)
       elseif key == "down" or key == "s" then
+        overlayKeyboardConfirm = true
         overlaySelected = overlaySelected + 1
         if overlaySelected > #items then overlaySelected = 1 end
         playSfx(sfxClick)
       elseif key == "return" or key == "space" then
+        if not overlayKeyboardConfirm then
+          return
+        end
         activateOverlay(items[overlaySelected])
       elseif key == "escape" then
         if playOverlay == "pause" then
@@ -2020,7 +2341,6 @@ function love.keypressed(key)
         restartRun()
       else
         editor:setActive(true)
-        grid:clearPuddles()
         if currentLevelName then
           editor:loadLevel(grid, currentLevelName)
         end
@@ -2069,11 +2389,35 @@ function love.textinput(text)
 end
 
 function love.mousepressed(x, y, button)
+  if state == "campaign_complete" and button == 1 then
+    if campaignComplete.inputLock > 0 then
+      return
+    end
+    local width, height = love.graphics.getDimensions()
+    local hit = campaignCompleteItemHit(x, y, width, height)
+    if hit > 0 then
+      campaignComplete.keyboardConfirm = true
+      campaignComplete.selected = hit
+      activateCampaignComplete(campaignCompleteMenu[hit])
+    end
+    return
+  end
+
   if state == "play" then
+    if endingCutscene and not editor.active and button == 1 then
+      if overlayInputLock <= 0 then
+        finishEndingCutscene()
+      end
+      return
+    end
     if playOverlay and not editor.active and button == 1 then
+      if overlayInputLock > 0 then
+        return
+      end
       local width, height = love.graphics.getDimensions()
       local hit = overlayItemHit(x, y, width, height)
       if hit > 0 then
+        overlayKeyboardConfirm = true
         overlaySelected = hit
         activateOverlay(overlayItems()[hit])
       end
