@@ -94,6 +94,10 @@ local function getPreviewSprites()
     boulder = love.graphics.newImage("assets/rock.png"),
     boulder2 = love.graphics.newImage("assets/rock2.png"),
     crackedBoulder = love.graphics.newImage("assets/rockbroken.png"),
+    buttonUnpressed = love.graphics.newImage("assets/Button unpressed.png"),
+    buttonPressed = love.graphics.newImage("assets/PRESSED BUTTON FINA.png"),
+    doorClosed = love.graphics.newImage("assets/door-closed.png"),
+    doorOpen = love.graphics.newImage("assets/door-open.png"),
     wall = love.graphics.newImage("assets/wall.png"),
     brickEnd = love.graphics.newImage("assets/Brickend.png"),
     wallHalf2 = love.graphics.newImage("assets/wall-half2.png"),
@@ -261,25 +265,19 @@ local function drawToolVisual(tool, wallFacing, cx, cy, size, zoom, alpha, halfW
     withAlpha(1, 1, 1, 1, alpha)
     love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif tool == "pressure_plate" then
-    local plateW = size * 0.72
-    local plateH = size * 0.22
-    withAlpha(0.10, 0.12, 0.15, 0.95, alpha)
-    love.graphics.rectangle("fill", cx - plateW * 0.5, cy - plateH * 0.5, plateW, plateH, 2, 2)
-    withAlpha(0.62, 0.70, 0.76, 0.95, alpha)
-    love.graphics.setLineWidth(1.5)
-    love.graphics.rectangle("line", cx - plateW * 0.5, cy - plateH * 0.5, plateW, plateH, 2, 2)
-    withAlpha(0.22, 0.48, 0.62, 0.95, alpha)
-    love.graphics.rectangle("fill", cx - plateW * 0.34, cy - plateH * 0.28, plateW * 0.68, plateH * 0.56, 1, 1)
-    withAlpha(0.82, 0.92, 0.98, 0.8, alpha)
-    love.graphics.setLineWidth(1)
-    love.graphics.line(cx - plateW * 0.22, cy, cx + plateW * 0.22, cy)
+    local img = sprites.buttonUnpressed
+    local iw, ih = img:getDimensions()
+    local target = size * 0.88
+    local scale = target / math.max(iw, ih)
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif tool == "puzzle_door" then
-    withAlpha(0.06, 0.16, 0.34, 0.98, alpha)
-    love.graphics.rectangle("fill", x + 3, y + 3, size - 6, size - 6, 2, 2)
-    withAlpha(0.28, 0.62, 0.95, 0.9, alpha)
-    love.graphics.setLineWidth(2)
-    love.graphics.line(cx, y + 6, cx, y + size - 6)
-    love.graphics.line(x + 6, cy, x + size - 6, cy)
+    local img = sprites.doorClosed
+    local iw, ih = img:getDimensions()
+    local target = size * 0.98
+    local scale = target / math.max(iw, ih)
+    withAlpha(1, 1, 1, 1, alpha)
+    love.graphics.draw(img, cx, cy, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif tool == "side_wall" then
     drawSideWallPreview(sprites.brickEnd, x, y, size, size, size, alpha, wallFacing)
   elseif tool == "front_wall" or tool == "cracked_wall" then
@@ -495,14 +493,12 @@ local function drawActionIcon(kind, size)
     love.graphics.line(x + w * 0.5, y + w * 0.30, x + w * 0.5, y + w * 0.70)
     love.graphics.line(x + w * 0.28, y + w * 0.50, x + w * 0.72, y + w * 0.50)
   elseif kind == "puzzle_door" then
-    love.graphics.setColor(0.20, 0.22, 0.50, 1)
-    love.graphics.rectangle("fill", x + 2, y + 1, w - 4, w - 2, 2, 2)
-    love.graphics.setColor(0.58, 0.62, 1.0, 1)
-    love.graphics.setLineWidth(1.5)
-    love.graphics.rectangle("line", x + 3, y + 2, w - 6, w - 4, 2, 2)
-    love.graphics.line(x + w * 0.24, y + w * 0.46, x + w * 0.76, y + w * 0.46)
-    love.graphics.line(x + w * 0.50, y + w * 0.46, x + w * 0.50, y + w * 0.74)
-    love.graphics.circle("fill", x + w * 0.67, y + w * 0.58, w * 0.08)
+    local sprites = getPreviewSprites()
+    local img = sprites.doorClosed
+    local iw, ih = img:getDimensions()
+    local scale = (w * 0.92) / math.max(iw, ih)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(img, x + w * 0.5, y + w * 0.5, 0, scale, scale, iw * 0.5, ih * 0.5)
   elseif kind == "time_limit" then
     love.graphics.setColor(0.18, 0.52, 0.82, 1)
     love.graphics.circle("fill", x + w * 0.5, y + w * 0.5, w * 0.42)
