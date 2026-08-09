@@ -1517,16 +1517,6 @@ function Editor:keypressed(key, grid, camera)
     self.levelTime = DEFAULT_LEVEL_TIME
     self:setStatus("New blank level")
 
-  elseif key == "f" then
-    for row = 1, grid.rows do
-      for col = 1, grid.columns do
-        grid:setGround(col, row)
-      end
-    end
-
-    self.loadDropdownOpen = false
-    self:setStatus("Ground filled")
-
   elseif key == "s" and controlIsDown() then
     self:beginSave()
 
@@ -2046,7 +2036,7 @@ function Editor:draw(grid, camera)
     "center"
   )
   love.graphics.printf(
-    "Ctrl+S Save  ·  L Load  ·  N/C New  ·  F Fill  ·  Behind front walls can take a Side Wall on top",
+    "Ctrl+S Save  ·  L Load  ·  N/C New  ·  Behind front walls can take a Side Wall on top",
     12,
     legendY + 47,
     screenWidth - 24,
