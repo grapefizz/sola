@@ -4,7 +4,7 @@ Player.__index = Player
 local Perspective = require "game.perspective"
 
 local MOVE_DURATION = 0.14
-local ICE_MOVE_DURATION = MOVE_DURATION / 1.25 .
+local ICE_MOVE_DURATION = MOVE_DURATION / 1.25
 local SMASH_SPEED_FACTOR = 1.05
 local PLAYER_FRAME_SIZE = 128
 local PLAYER_FRAME_DURATION = 1 / 12

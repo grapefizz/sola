@@ -995,6 +995,8 @@ function Grid:serialize()
       elseif self:isBoulderTile(col, row) and self:isIceTile(col, row) then
         local boulder = self.boulderTiles[self:key(col, row)]
         cells[col] = boulder.cracked and "Q" or "O"
+      elseif self:isPressurePlate(col, row) and self:isIceTile(col, row)then
+        cells[col] = "K" and "I"
       elseif self:isIceTile(col, row) then
         cells[col] = "I"
       elseif self:isSnowflakeTile(col, row) then
