@@ -1,6 +1,7 @@
 function love.conf(t)
   t.identity = "ice-cube"
-  t.version = "11.5"
+  -- The Love.js runtime used by the web build is based on LÖVE 11.4.
+  t.version = "11.4"
   t.window.title = "Ice Cube"
   t.window.width = 960
   t.window.height = 540

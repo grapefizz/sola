@@ -219,6 +219,10 @@ end
 
 local function loadProgress()
   progress.finished = {}
+  if not love.filesystem.getInfo(PROGRESS_FILE) then
+    updateEditorUnlock()
+    return
+  end
   local data = love.filesystem.read(PROGRESS_FILE)
   if not data then
     updateEditorUnlock()

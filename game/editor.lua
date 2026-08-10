@@ -667,6 +667,11 @@ local function ensureToolIcon(toolEntry, wallFacing, halfWallFill, wallDepth, ke
 end
 
 local function sourceLevelsDir()
+  -- Love.js exposes the packaged game as a source directory, but browser
+  -- builds cannot launch shell commands or access it through io.open.
+  if love.system.getOS() == "Web" then
+    return nil
+  end
   if love.filesystem.isFused() then
     return nil
   end
